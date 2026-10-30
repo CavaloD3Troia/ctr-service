@@ -16,6 +16,7 @@ public class EventCreatedListener {
 
     private static final Logger LOGGER = LoggerFactory.getLogger(EventCreatedListener.class);
 
+    // An annotation can't take the CtrKafkaProperties bean; the placeholder reads the same key it validates
     @KafkaListener(topics = "${ctr.kafka.topic}")
     public void onEventCreated(final ConsumerRecord<String, EventCreated> record) {
         LOGGER.info("operation=consume, message=Event created key='{}' partition={} offset={} payload={{}}",

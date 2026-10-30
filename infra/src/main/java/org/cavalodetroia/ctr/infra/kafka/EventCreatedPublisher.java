@@ -5,7 +5,6 @@ import org.cavalodetroia.ctr.domain.event.Event;
 import org.cavalodetroia.ctr.domain.event.port.out.EventPublisher;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import org.springframework.beans.factory.annotation.Value;
 import org.springframework.kafka.core.KafkaTemplate;
 import org.springframework.stereotype.Component;
 
@@ -20,10 +19,10 @@ public class EventCreatedPublisher implements EventPublisher {
 
     public EventCreatedPublisher(final KafkaTemplate<String, EventCreated> template,
                                  final EventCreatedConverter converter,
-                                 @Value("${ctr.kafka.topic}") final String topic) {
+                                 final CtrKafkaProperties properties) {
         this.template = template;
         this.converter = converter;
-        this.topic = topic;
+        this.topic = properties.topic();
     }
 
     @Override
