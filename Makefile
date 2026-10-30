@@ -20,11 +20,11 @@ help: ## Show this help
 
 .PHONY: build
 build: ## Compile and run the unit and architecture tests
-	./mvnw -B verify
+	./mvnw -B clean verify
 
 .PHONY: component-test
 component-test: ## Run the Cucumber component tests (Postgres and Kafka in Testcontainers, needs Docker)
-	$(TESTCONTAINERS_ENV) ./mvnw -B verify -Pcomponent-tests
+	$(TESTCONTAINERS_ENV) ./mvnw -B clean verify -Pcomponent-tests
 
 .PHONY: package
 package: ## Build the runnable jar, skipping the tests

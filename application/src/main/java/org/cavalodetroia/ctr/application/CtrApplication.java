@@ -2,7 +2,6 @@ package org.cavalodetroia.ctr.application;
 
 import org.springframework.boot.SpringApplication;
 import org.springframework.boot.autoconfigure.SpringBootApplication;
-import org.springframework.boot.context.properties.ConfigurationPropertiesScan;
 
 /**
  * Composition root. The domain has no annotations, so it is built by hand in {@code wiring}; the adapters in api
@@ -12,7 +11,6 @@ import org.springframework.boot.context.properties.ConfigurationPropertiesScan;
         "org.cavalodetroia.ctr.application",
         "org.cavalodetroia.ctr.api",
         "org.cavalodetroia.ctr.infra"})
-@ConfigurationPropertiesScan("org.cavalodetroia.ctr.infra")
 public class CtrApplication {
 
     public static void main(final String[] args) {

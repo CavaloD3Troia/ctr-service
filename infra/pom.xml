@@ -43,10 +43,10 @@
             <scope>runtime</scope>
         </dependency>
 
-        <!-- Kafka. Plain spring-kafka, without Boot's auto-configuration: every client is wired explicitly -->
+        <!-- Kafka. Producer and consumer are configured in application.yml -->
         <dependency>
-            <groupId>org.springframework.kafka</groupId>
-            <artifactId>spring-kafka</artifactId>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-kafka</artifactId>
         </dependency>
 
         <dependency>

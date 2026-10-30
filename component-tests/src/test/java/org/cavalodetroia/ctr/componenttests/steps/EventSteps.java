@@ -1,107 +1,150 @@
 package org.cavalodetroia.ctr.componenttests.steps;
 
+import ch.qos.logback.classic.Logger;
+import ch.qos.logback.classic.spi.ILoggingEvent;
+import ch.qos.logback.core.read.ListAppender;
 import com.google.protobuf.InvalidProtocolBufferException;
-import io.cucumber.java.en.Given;
+import com.jayway.jsonpath.JsonPath;
+import io.cucumber.java.After;
+import io.cucumber.java.Before;
 import io.cucumber.java.en.Then;
 import io.cucumber.java.en.When;
-import org.cavalodetroia.contracts.ctr.v1.EventLifecycle;
-import org.cavalodetroia.ctr.componenttests.support.ApiClient;
-import org.cavalodetroia.ctr.componenttests.support.KafkaTestClient;
-import org.cavalodetroia.ctr.componenttests.support.ScenarioContext;
-import org.springframework.http.HttpHeaders;
+import org.apache.kafka.clients.consumer.ConsumerConfig;
+import org.apache.kafka.clients.consumer.ConsumerRecord;
+import org.apache.kafka.clients.consumer.KafkaConsumer;
+import org.apache.kafka.common.TopicPartition;
+import org.apache.kafka.common.serialization.ByteArrayDeserializer;
+import org.apache.kafka.common.serialization.StringDeserializer;
+import org.cavalodetroia.contracts.ctr.v1.EventCreated;
+import org.cavalodetroia.ctr.infra.kafka.EventCreatedListener;
+import org.jooq.DSLContext;
+import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Value;
+import org.springframework.boot.test.web.server.LocalServerPort;
+import org.springframework.http.MediaType;
+import org.springframework.http.ResponseEntity;
+import org.springframework.web.client.RestClient;
 import tools.jackson.databind.json.JsonMapper;
 
+import java.time.Duration;
+import java.time.Instant;
+import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 
-import static java.nio.charset.StandardCharsets.UTF_8;
 import static org.assertj.core.api.Assertions.assertThat;
-import static org.cavalodetroia.ctr.componenttests.support.KafkaTestClient.EVENT_LIFECYCLE_TOPIC;
+import static org.awaitility.Awaitility.await;
 
+/**
+ * Drives the app from the outside: HTTP in, then checks the database, the topic, and the listener's log.
+ */
 public class EventSteps {
 
-    private static final String EVENTS = "/api/v1/events";
+    // Written out on purpose: the topic is part of the contract, so renaming it should break this test
+    private static final String TOPIC = "ctr.event.created.v1";
+    private static final Duration TIMEOUT = Duration.ofSeconds(15);
 
-    private final ApiClient api;
-    private final KafkaTestClient kafka;
-    private final ScenarioContext scenario;
+    private final RestClient http;
+    private final DSLContext dsl;
+    private final String bootstrapServers;
+    private final Logger listenerLogger = (Logger) LoggerFactory.getLogger(EventCreatedListener.class);
+    private final ListAppender<ILoggingEvent> listenerLogs = new ListAppender<>();
 
-    public EventSteps(final ApiClient api, final KafkaTestClient kafka, final ScenarioContext scenario) {
-        this.api = api;
-        this.kafka = kafka;
-        this.scenario = scenario;
+    private String name;
+    private ResponseEntity<String> response;
+
+    public EventSteps(@LocalServerPort final int port,
+                      final DSLContext dsl,
+                      @Value("${spring.kafka.bootstrap-servers}") final String bootstrapServers) {
+        this.http = RestClient.builder()
+                .baseUrl("http://localhost:" + port)
+                // A 4xx is something to assert on, not an exception
+                .defaultStatusHandler(status -> true, (request, ignored) -> { })
+                .build();
+        this.dsl = dsl;
+        this.bootstrapServers = bootstrapServers;
     }
 
-    @Given("an event {string} of sport {string} exists")
-    public void anEventExists(final String name, final String sport) {
-        anEventIsCreated(name, sport);
-        assertThat(api.lastResponse().status()).as(api.lastResponse().body()).isEqualTo(201);
+    @Before
+    public void captureListenerLogs() {
+        listenerLogs.start();
+        listenerLogger.addAppender(listenerLogs);
     }
 
-    @When("an event {string} of sport {string} is created")
-    public void anEventIsCreated(final String name, final String sport) {
-        create(name, sport, Map.of());
+    @After
+    public void stopCapturingListenerLogs() {
+        listenerLogger.detachAppender(listenerLogs);
     }
 
-    @When("an event {string} of sport {string} is created with correlation id {string}")
-    public void anEventIsCreatedWithCorrelationId(final String name, final String sport, final String correlationId) {
-        create(name, sport, Map.of("X-Correlation-Id", correlationId));
+    @When("an event {string} is created")
+    public void anEventIsCreated(final String name) {
+        this.name = name;
+        response = http.post()
+                .uri("/api/v1/events")
+                .contentType(MediaType.APPLICATION_JSON)
+                .body(JsonMapper.shared().writeValueAsString(Map.of("name", name)))
+                .retrieve()
+                .toEntity(String.class);
     }
 
-    @When("the event {string} is requested")
-    public void theEventIsRequested(final String eventId) {
-        api.get(EVENTS + "/" + eventId);
+    @Then("the response status is {int}")
+    public void theResponseStatusIs(final int status) {
+        assertThat(response.getStatusCode().value()).as(response.getBody()).isEqualTo(status);
     }
 
-    @Then("the response points to the created event")
-    public void theResponsePointsToTheCreatedEvent() {
-        assertThat(api.lastResponse().header(HttpHeaders.LOCATION)).endsWith(EVENTS + "/" + scenario.eventId());
+    @Then("the event is stored in the database")
+    public void theEventIsStoredInTheDatabase() {
+        assertThat(dsl.fetchValue("select name from event where id = ?", UUID.fromString(eventId()))).isEqualTo(name);
     }
 
-    @Then("the created event is returned with name {string} and sport {string}")
-    public void theCreatedEventIsReturned(final String name, final String sport) {
-        var response = api.lastResponse();
-        assertThat(response.<String>json("$.id")).isEqualTo(scenario.eventId().toString());
-        assertThat(response.<String>json("$.name")).isEqualTo(name);
-        assertThat(response.<String>json("$.sport")).isEqualTo(sport);
-        assertThat(response.<String>json("$.createdAt")).isNotBlank();
+    @Then("an EventCreated message is published")
+    public void anEventCreatedMessageIsPublished() throws InvalidProtocolBufferException {
+        final EventCreated message = EventCreated.parseFrom(awaitMessage(eventId()).value());
+
+        assertThat(message.getEventId()).isEqualTo(eventId());
+        assertThat(message.getName()).isEqualTo(name);
     }
 
-    @Then("the created event can be fetched")
-    public void theCreatedEventCanBeFetched() {
-        var created = api.lastResponse();
-        var fetched = api.get(EVENTS + "/" + scenario.eventId());
-        assertThat(fetched.status()).isEqualTo(200);
-        assertThat(fetched.<Object>json("$")).isEqualTo(created.json("$"));
+    @Then("the service consumes the message and logs its payload")
+    public void theServiceConsumesTheMessageAndLogsItsPayload() {
+        await().atMost(TIMEOUT).untilAsserted(() -> assertThat(loggedLines())
+                .anySatisfy(line -> assertThat(line).contains(eventId()).contains(name)));
     }
 
-    @Then("an EventCreated message is published for the created event with name {string} and sport {string}")
-    public void anEventCreatedMessageIsPublished(final String name, final String sport)
-            throws InvalidProtocolBufferException {
-        var record = kafka.awaitMessage(EVENT_LIFECYCLE_TOPIC, scenario.eventId().toString());
-        var message = EventLifecycle.parseFrom(record.value());
-
-        assertThat(message.getEventId()).isEqualTo(scenario.eventId().toString());
-        assertThat(message.hasOccurredAt()).isTrue();
-        assertThat(message.getChangeCase()).isEqualTo(EventLifecycle.ChangeCase.EVENT_CREATED);
-        assertThat(message.getEventCreated().getName()).isEqualTo(name);
-        assertThat(message.getEventCreated().getSport()).isEqualTo(sport);
+    private String eventId() {
+        return JsonPath.read(response.getBody(), "$.id");
     }
 
-    @Then("the message published for the created event has header {string} with value {string}")
-    public void theMessageHasHeader(final String name, final String value) {
-        var record = kafka.awaitMessage(EVENT_LIFECYCLE_TOPIC, scenario.eventId().toString());
-        var header = record.headers().lastHeader(name);
-
-        assertThat(header).as("header '%s'", name).isNotNull();
-        assertThat(new String(header.value(), UTF_8)).isEqualTo(value);
-    }
-
-    private void create(final String name, final String sport, final Map<String, String> headers) {
-        var json = JsonMapper.shared().writeValueAsString(Map.of("name", name, "sport", sport));
-        var response = api.post(EVENTS, json, headers);
-        if (response.status() == 201) {
-            scenario.eventId(UUID.fromString(response.json("$.id")));
+    private List<String> loggedLines() {
+        // The listener appends on its own thread; the appender synchronizes on itself while doing so
+        synchronized (listenerLogs) {
+            return listenerLogs.list.stream().map(ILoggingEvent::getFormattedMessage).toList();
         }
+    }
+
+    /**
+     * The first message with this key, reading every partition of the topic from the beginning.
+     */
+    private ConsumerRecord<String, byte[]> awaitMessage(final String key) {
+        try (var consumer = new KafkaConsumer<>(
+                Map.<String, Object>of(ConsumerConfig.BOOTSTRAP_SERVERS_CONFIG, bootstrapServers),
+                new StringDeserializer(),
+                new ByteArrayDeserializer())) {
+            final List<TopicPartition> partitions = consumer.partitionsFor(TOPIC, TIMEOUT).stream()
+                    .map(partition -> new TopicPartition(TOPIC, partition.partition()))
+                    .toList();
+            consumer.assign(partitions);
+            consumer.seekToBeginning(partitions);
+
+            final Instant deadline = Instant.now().plus(TIMEOUT);
+            while (Instant.now().isBefore(deadline)) {
+                for (final ConsumerRecord<String, byte[]> record : consumer.poll(Duration.ofMillis(200))) {
+                    if (key.equals(record.key())) {
+                        return record;
+                    }
+                }
+            }
+        }
+        throw new AssertionError("No message with key '" + key + "' on " + TOPIC + " within " + TIMEOUT);
     }
 }

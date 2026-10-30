@@ -5,11 +5,6 @@ import org.cavalodetroia.ctr.domain.event.port.out.EventRepository;
 import org.jooq.DSLContext;
 import org.springframework.stereotype.Repository;
 
-import java.util.Optional;
-import java.util.UUID;
-
-import static org.cavalodetroia.ctr.infra.persistence.jooq.Tables.EVENT;
-
 @Repository
 public class JooqEventRepository implements EventRepository {
 
@@ -24,12 +19,5 @@ public class JooqEventRepository implements EventRepository {
     @Override
     public void save(final Event event) {
         dsl.executeInsert(converter.toRecord(event));
-    }
-
-    @Override
-    public Optional<Event> findById(final UUID eventId) {
-        return dsl.selectFrom(EVENT)
-                .where(EVENT.ID.eq(eventId))
-                .fetchOptional(converter::toDomain);
     }
 }
