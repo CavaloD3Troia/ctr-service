@@ -16,6 +16,8 @@ public class EventCreatedListener {
 
     private static final Logger LOGGER = LoggerFactory.getLogger(EventCreatedListener.class);
 
+    // Placeholder rather than SpEL on the CtrKafkaProperties bean (its generated name is awkward): same key,
+    // same validation, simpler to read
     @KafkaListener(topics = "${ctr.kafka.topic}")
     public void onEventCreated(final ConsumerRecord<String, EventCreated> record) {
         LOGGER.info("operation=consume, message=Event created key='{}' partition={} offset={} payload={{}}",

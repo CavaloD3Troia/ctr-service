@@ -1,0 +1,4 @@
+# Automated tests. The tests start Postgres and Kafka in Testcontainers and supply the connections themselves.
+logging:
+  level:
+    org.apache.kafka: WARN

@@ -1,4 +1,4 @@
-# `docker compose up -d`                → Postgres + Kafka only (run/debug the app from the IDE)
+# `docker compose up -d`                → Postgres, Kafka and MinIO only (run/debug the app from the IDE)
 # `docker compose --profile app up -d`  → the app too (see `make up`)
 name: ctr-service
 
@@ -45,6 +45,28 @@ services:
       retries: 20
       start_period: 10s
 
+  # S3-compatible object storage (DEC-0007). MinIO no longer publishes images to Docker Hub or quay.io, so this is
+  # Chainguard's build of it (RELEASE.2026-10-23T20-06-51Z), pinned by digest because only `latest` is free.
+  # S3 API on :9000, web console on :9001 (log in with the root user below).
+  minio:
+    image: chainguard/minio:latest@sha256:3b6e40c30ecd5cea627e382ff0b82ca841f58c52294578787043ee80c8ef7c82
+    command: ["server", "/data", "--console-address", ":9001"]
+    environment:
+      # Local only, like the Postgres credentials above
+      MINIO_ROOT_USER: ctr
+      MINIO_ROOT_PASSWORD: ctr-local
+    ports:
+      # Loopback only: the root user below must not be reachable from the network
+      - "127.0.0.1:9000:9000"
+      - "127.0.0.1:9001:9001"
+    volumes:
+      - minio-data:/data
+    healthcheck:
+      test: ["CMD", "mc", "ready", "local"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
   ctr-service:
     profiles: [app]
     build: .
@@ -55,6 +77,7 @@ services:
       kafka:
         condition: service_healthy
     environment:
+      SPRING_PROFILES_ACTIVE: dev
       DB_URL: jdbc:postgresql://postgres:5432/ctr
       KAFKA_BOOTSTRAP_SERVERS: kafka:29092
     ports:
@@ -69,3 +92,4 @@ services:
 
 volumes:
   postgres-data:
+  minio-data:
