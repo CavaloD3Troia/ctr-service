@@ -41,7 +41,7 @@ deps-up: ## Start only Postgres, Kafka and MinIO, then run or debug CtrApplicati
 	$(COMPOSE) up -d --wait
 
 .PHONY: up
-up: package ## Build the app and start it in Docker together with Postgres and Kafka
+up: package ## Build the app and start it in Docker together with Postgres, Kafka and MinIO
 	$(COMPOSE) --profile app up -d --build --wait
 
 .PHONY: run

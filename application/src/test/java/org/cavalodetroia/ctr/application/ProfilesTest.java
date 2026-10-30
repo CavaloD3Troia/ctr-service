@@ -79,10 +79,11 @@ class ProfilesTest {
                 context.getEnvironment().getProperty("logging.level.org.apache.kafka")).isEqualTo("WARN"));
     }
 
-    @Test
-    void should_expose_only_health_and_info_when_profile_is_dev() {
+    @ParameterizedTest
+    @ValueSource(strings = {"dev", "test", "prod"})
+    void should_expose_only_health_and_info_over_http_in_every_profile(final String profile) {
         // AC-3: health is reachable over HTTP; nothing else from actuator is
-        withProfile("dev").run(context -> assertThat(
+        withProfile(profile).run(context -> assertThat(
                 context.getEnvironment().getProperty("management.endpoints.web.exposure.include"))
                 .isEqualTo("health,info"));
     }

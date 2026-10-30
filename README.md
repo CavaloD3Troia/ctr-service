@@ -44,7 +44,7 @@ already points at `localhost:5432` and `localhost:9092`. MinIO (S3-compatible, n
 **To run it all in Docker**, use:
 
 ```sh
-make up      # builds the jar, then starts Postgres, Kafka and the app on :8080
+make up      # builds the jar, then starts Postgres, Kafka, MinIO and the app on :8080
 make logs
 make down    # `make reset` also deletes the database
 ```

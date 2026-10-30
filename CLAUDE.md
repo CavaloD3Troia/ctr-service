@@ -30,7 +30,7 @@ The contracts jar must be in `~/.m2`: a GitHub Packages `read:packages` token, o
 | `domain` | Records, domain services, ports: `port/in` (use cases), `port/out` (what infra implements), domain exceptions | Depend on anything but the JDK: no Spring, no Kafka, no jOOQ, no annotations |
 | `api` | Controllers, request/response records, converters, the error handler | Call infra or repositories; hold business rules |
 | `infra` | jOOQ repositories, Kafka publishers/listeners, serdes, converters, migrations | Import `api` or `application`; let a driver exception reach the domain |
-| `application` | `CtrApplication`, `wiring/` (builds domain services with `new`), `application.yml` | Contain business logic |
+| `application` | `CtrApplication`, `wiring/` (builds domain services with `new`), `application.yml` plus `application-{dev,test,prod}.yml` | Contain business logic |
 | `component-tests` | Cucumber, black box | Reach into internals beyond what a scenario must observe |
 
 - `ArchitectureTest` enforces this. Never weaken a rule to make code compile; move the code.

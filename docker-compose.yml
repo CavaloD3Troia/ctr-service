@@ -56,8 +56,9 @@ services:
       MINIO_ROOT_USER: ctr
       MINIO_ROOT_PASSWORD: ctr-local
     ports:
-      - "9000:9000"
-      - "9001:9001"
+      # Loopback only: the root user below must not be reachable from the network
+      - "127.0.0.1:9000:9000"
+      - "127.0.0.1:9001:9001"
     volumes:
       - minio-data:/data
     healthcheck:

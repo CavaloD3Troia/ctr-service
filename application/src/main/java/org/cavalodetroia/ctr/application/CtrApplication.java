@@ -13,7 +13,10 @@ import org.springframework.boot.context.properties.ConfigurationPropertiesScan;
         "org.cavalodetroia.ctr.application",
         "org.cavalodetroia.ctr.api",
         "org.cavalodetroia.ctr.infra"})
-@ConfigurationPropertiesScan("org.cavalodetroia.ctr")
+@ConfigurationPropertiesScan({
+        "org.cavalodetroia.ctr.application",
+        "org.cavalodetroia.ctr.api",
+        "org.cavalodetroia.ctr.infra"})
 public class CtrApplication {
 
     public static void main(final String[] args) {
