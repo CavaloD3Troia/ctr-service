@@ -14,8 +14,9 @@ The patterns come from the `kafka-rest-service` blueprint (skill of the same nam
 
 ```sh
 make build            # clean verify: unit + ArchUnit tests
+make integration-test # + *IT tests (Testcontainers, needs Docker)
 make component-test   # + Cucumber against the whole app (Testcontainers, needs Docker)
-make deps-up          # Postgres + Kafka only, then run CtrApplication from the IDE (.run/)
+make deps-up          # Postgres + Kafka + MinIO only, then run CtrApplication from the IDE (.run/, profile dev)
 make up / logs / down # the app in Docker too
 ```
 
@@ -44,8 +45,11 @@ The contracts jar must be in `~/.m2`: a GitHub Packages `read:packages` token, o
 - A converter class at every boundary (API ↔ domain, domain ↔ jOOQ record, domain ↔ proto). Never map inline in
   a controller or listener, and never reuse one layer's type in another (no jOOQ record or proto in the API).
 - Logs are structured: `LOGGER.info("operation=create, message=Event created eventId='{}'", id)`.
-- Configuration: one `@ConfigurationProperties` record per concern, bound by prefix. The lone
-  `@Value("${ctr.kafka.topic}")` is the exception; replace it with a record as soon as a second Kafka setting appears.
+- Configuration: one `@Validated` `@ConfigurationProperties` record per concern, bound by prefix and living next to
+  the adapter that uses it (`infra/kafka/CtrKafkaProperties` for `ctr.kafka.*`). No `@Value`.
+- Profiles: `application.yml` holds what every profile shares. `application-dev.yml` defaults to `docker-compose.yml`,
+  `application-test.yml` leaves connections to Testcontainers, and `application-prod.yml` reads environment variables
+  with no defaults. The app needs an active profile; without one it does not start.
 
 ## REST
 
@@ -127,7 +131,7 @@ of the entity whose ordering matters (`event_id`).
 | You changed… | Tier | Where |
 |---|---|---|
 | Domain logic, converter, validation | Unit `*Test`: no Spring context, mock ports only | the module's `src/test` |
-| Repository query, migration, serde, Kafka listener/publisher wiring | Integration `*IT`: Testcontainers or MockMvc | the module (tier not set up yet; add a failsafe profile when the first one comes) |
+| Repository query, migration, serde, Kafka listener/publisher wiring, startup | Integration `*IT`: Testcontainers or MockMvc | the module's `src/test`; failsafe runs them with `-Pintegration-tests` (add the failsafe plugin to the module's pom like `application` does) |
 | Endpoint, request/response shape, outbound message | Component: Cucumber | `component-tests/src/test/resources/features` |
 
 - Names `should_<expected>_when_<condition>`, AssertJ only, Mockito for ports only. Fixtures are ObjectMother
@@ -139,8 +143,8 @@ of the entity whose ordering matters (`event_id`).
   - Before a step that depends on consumed state, wait until the service has consumed the message.
   - Keep scenario state in the step class or a `@ScenarioScope` bean, and use `pollInSameThread()` when the
     assertion touches one.
-- Containers are created once, in `component-tests/.../config/Containers`, with the same images as
-  `docker-compose.yml`. Keep the two in step.
+- Containers are created once, in `component-tests/.../config/Containers` (and in each `*IT`), with the same images as
+  `docker-compose.yml`. Keep them in step.
 
 ## Adding a field end to end
 
@@ -161,11 +165,10 @@ Left out of the first slice on purpose. Each item gets built, following this fil
 - persistence retries (resilience4j)
 - correlation ids: an HTTP filter, the Kafka header, and the MDC log pattern
 - the `@RestControllerAdvice` with stable error `code`s
-- typed properties records
 - the explicit `MessageListener` wiring
 - metrics: `@Timed` on controllers, listeners and repositories, plus `KafkaClientMetrics`
 - OpenTelemetry tracing and JSON logs
 - auth, and `Idempotency-Key` on `POST`
-- the integration-test tier
+- an S3 adapter (MinIO runs in `docker-compose.yml`, but nothing uses it yet)
 - OpenAPI docs
 - CI (it needs package access to fetch the contracts)

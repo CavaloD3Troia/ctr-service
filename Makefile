@@ -22,6 +22,10 @@ help: ## Show this help
 build: ## Compile and run the unit and architecture tests
 	./mvnw -B clean verify
 
+.PHONY: integration-test
+integration-test: ## Run the *IT integration tests (Postgres and Kafka in Testcontainers, needs Docker)
+	$(TESTCONTAINERS_ENV) ./mvnw -B clean verify -Pintegration-tests
+
 .PHONY: component-test
 component-test: ## Run the Cucumber component tests (Postgres and Kafka in Testcontainers, needs Docker)
 	$(TESTCONTAINERS_ENV) ./mvnw -B clean verify -Pcomponent-tests
@@ -33,7 +37,7 @@ package: ## Build the runnable jar, skipping the tests
 # --- Run locally ------------------------------------------------------------------------------
 
 .PHONY: deps-up
-deps-up: ## Start only Postgres and Kafka, then run or debug CtrApplication from the IDE
+deps-up: ## Start only Postgres, Kafka and MinIO, then run or debug CtrApplication from the IDE
 	$(COMPOSE) up -d --wait
 
 .PHONY: up
@@ -42,7 +46,7 @@ up: package ## Build the app and start it in Docker together with Postgres and K
 
 .PHONY: run
 run: package ## Run the app on this machine, against `make deps-up`
-	java -jar $(APP_JAR)
+	java -jar $(APP_JAR) --spring.profiles.active=dev
 
 .PHONY: logs
 logs: ## Follow the app logs

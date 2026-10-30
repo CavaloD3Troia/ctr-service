@@ -21,7 +21,7 @@ Kafka or SQL.
 | `domain` | `Event`, `EventService`, and the ports: `port/in/CreateEvent` (called by api) and `port/out/EventRepository` and `EventPublisher` (implemented by infra). Depends on the JDK only. |
 | `api` | `EventController`, the request and response records, and `EventConverter` (domain → response) |
 | `infra` | `persistence/` (jOOQ + Flyway) and `kafka/` (publisher, listener, protobuf serde and converter) |
-| `application` | `CtrApplication`, `wiring/EventWiring` (builds the domain service), and `application.yml` |
+| `application` | `CtrApplication`, `wiring/EventWiring` (builds the domain service), `application.yml` and one file per profile |
 | `component-tests` | Cucumber against the whole app, with Postgres and Kafka in Testcontainers |
 
 `ArchitectureTest` in `application` breaks the build if a layer reaches where it shouldn't.
@@ -31,14 +31,15 @@ Kafka or SQL.
 You need Java 25 and Docker (Docker Desktop, Colima or OrbStack). You also need the contracts jar: see
 [Contracts](#contracts).
 
-**To debug in IntelliJ**, start only Postgres and Kafka:
+**To debug in IntelliJ**, start only Postgres, Kafka and MinIO:
 
 ```sh
 docker compose up -d        # or: make deps-up, which also waits until they are healthy
 ```
 
-Then run the shared **CtrApplication** run configuration (from `.run/`). `application.yml` already points at
-`localhost:5432` and `localhost:9092`.
+Then run the shared **CtrApplication** run configuration (from `.run/`). It activates the `dev` profile, which
+already points at `localhost:5432` and `localhost:9092`. MinIO (S3-compatible, nothing uses it yet) serves its API on
+`localhost:9000` and its console on `localhost:9001`, user `ctr`, password `ctr-local`.
 
 **To run it all in Docker**, use:
 
@@ -54,14 +55,31 @@ Then create an event and watch the listener log it:
 curl -i localhost:8080/api/v1/events -H 'Content-Type: application/json' -d '{"name":"Benfica vs Porto"}'
 ```
 
-`make help` lists every target. The app reads `DB_URL`, `DB_USERNAME`, `DB_PASSWORD` and
-`KAFKA_BOOTSTRAP_SERVERS`, which default to the compose setup.
+`make help` lists every target.
+
+## Profiles
+
+The app needs an active profile (`SPRING_PROFILES_ACTIVE` or `--spring.profiles.active`); without one it does not
+start. Settings shared by every profile are in `application.yml`.
+
+| Profile | Used by | Postgres and Kafka |
+|---|---|---|
+| `dev` | the IDE run configuration, `make run`, `make up` | `DB_URL`, `DB_USERNAME`, `DB_PASSWORD`, `KAFKA_BOOTSTRAP_SERVERS`, defaulting to the compose setup |
+| `test` | the component tests | supplied by Testcontainers |
+| `prod` | deployed environments | the same four variables, **required**: the app stops at startup if one is missing |
+
+Our own settings are typed records bound by prefix:
+
+| Property | Record | Meaning |
+|---|---|---|
+| `ctr.kafka.topic` | `CtrKafkaProperties` | the topic `EventCreated` is published to and consumed from (`ctr.event.created.v1`) |
 
 ## Tests
 
 | Command | Runs |
 |---|---|
-| `make build` | Unit tests in every module, plus `ArchitectureTest` |
+| `make build` | Unit tests in every module, plus `ArchitectureTest` and the check that `domain` pulls in no Spring, jOOQ or Kafka jar |
+| `make integration-test` | All of that, plus the `*IT` tests: `CtrApplicationIT` starts the app with the `dev` profile and checks `/actuator/health` |
 | `make component-test` | All of that, plus `component-tests/src/test/resources/features/events.feature` |
 
 The component test creates an event over HTTP, then checks three things: the row in Postgres, the message on the
