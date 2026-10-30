@@ -1,0 +1,35 @@
+# Defaults point at the dependencies started by `docker compose up -d`, so the app runs from the IDE as is.
+# The container (`make up`) overrides them through the environment variables in docker-compose.yml.
+spring:
+  application:
+    name: ctr-service
+  datasource:
+    url: ${DB_URL:jdbc:postgresql://localhost:5432/ctr}
+    username: ${DB_USERNAME:ctr}
+    password: ${DB_PASSWORD:ctr}
+
+ctr:
+  kafka:
+    bootstrap-servers: ${KAFKA_BOOTSTRAP_SERVERS:localhost:9092}
+    publisher:
+      event-lifecycle:
+        topic: ctr.event.lifecycle.v1
+    listener:
+      job-status:
+        topic: pipeline.job.status.v1
+        group-id: ctr-service.job-status
+        concurrency: 1
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info
+  endpoint:
+    health:
+      probes:
+        enabled: true
+
+logging:
+  pattern:
+    correlation: "[%X{correlationId:-}] "
