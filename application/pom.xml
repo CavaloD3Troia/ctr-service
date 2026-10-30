@@ -1,0 +1,60 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+
+    <parent>
+        <groupId>org.cavalodetroia</groupId>
+        <artifactId>ctr-service</artifactId>
+        <version>0.1.0-SNAPSHOT</version>
+    </parent>
+
+    <artifactId>ctr-application</artifactId>
+    <name>ctr-application</name>
+    <description>Starts the app and wires the domain to its adapters</description>
+
+    <dependencies>
+        <dependency>
+            <groupId>org.cavalodetroia</groupId>
+            <artifactId>ctr-domain</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>org.cavalodetroia</groupId>
+            <artifactId>ctr-api</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>org.cavalodetroia</groupId>
+            <artifactId>ctr-infra</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-actuator</artifactId>
+        </dependency>
+
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-test</artifactId>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>com.tngtech.archunit</groupId>
+            <artifactId>archunit-junit5</artifactId>
+            <scope>test</scope>
+        </dependency>
+    </dependencies>
+
+    <build>
+        <finalName>ctr-service</finalName>
+        <plugins>
+            <!-- The runnable jar gets the "exec" classifier, so component-tests can still depend on the plain jar -->
+            <plugin>
+                <groupId>org.springframework.boot</groupId>
+                <artifactId>spring-boot-maven-plugin</artifactId>
+                <configuration>
+                    <classifier>exec</classifier>
+                </configuration>
+            </plugin>
+        </plugins>
+    </build>
+</project>

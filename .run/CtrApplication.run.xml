@@ -1,0 +1,9 @@
+<component name="ProjectRunConfigurationManager">
+  <configuration default="false" name="CtrApplication" type="Application" factoryName="Application">
+    <option name="MAIN_CLASS_NAME" value="org.cavalodetroia.ctr.application.CtrApplication" />
+    <module name="ctr-application" />
+    <method v="2">
+      <option name="Make" enabled="true" />
+    </method>
+  </configuration>
+</component>

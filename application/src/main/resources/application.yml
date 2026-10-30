@@ -1,0 +1,37 @@
+# Defaults point at the dependencies started by `docker compose up -d`, so the app runs from the IDE as is.
+# The container (`make up`) overrides them through the environment variables in docker-compose.yml.
+spring:
+  application:
+    name: ctr-service
+  datasource:
+    url: ${DB_URL:jdbc:postgresql://localhost:5432/ctr}
+    username: ${DB_USERNAME:ctr}
+    password: ${DB_PASSWORD:ctr}
+  kafka:
+    bootstrap-servers: ${KAFKA_BOOTSTRAP_SERVERS:localhost:9092}
+    producer:
+      value-serializer: org.cavalodetroia.ctr.infra.kafka.ProtobufSerializer
+    consumer:
+      group-id: ctr-service
+      auto-offset-reset: earliest
+      # A message that cannot be parsed is logged and skipped instead of blocking the partition
+      value-deserializer: org.springframework.kafka.support.serializer.ErrorHandlingDeserializer
+      properties:
+        spring.deserializer.value.delegate.class: org.cavalodetroia.ctr.infra.kafka.EventCreatedDeserializer
+  mvc:
+    problemdetails:
+      enabled: true
+
+ctr:
+  kafka:
+    topic: ctr.event.created.v1
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info
+  endpoint:
+    health:
+      probes:
+        enabled: true

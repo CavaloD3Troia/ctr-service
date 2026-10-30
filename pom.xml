@@ -1,0 +1,136 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+
+    <parent>
+        <groupId>org.springframework.boot</groupId>
+        <artifactId>spring-boot-starter-parent</artifactId>
+        <version>4.1.2</version>
+        <relativePath/>
+    </parent>
+
+    <groupId>org.cavalodetroia</groupId>
+    <artifactId>ctr-service</artifactId>
+    <version>0.1.0-SNAPSHOT</version>
+    <packaging>pom</packaging>
+
+    <name>ctr-service</name>
+    <description>Control Tower: the only backend the UI talks to</description>
+
+    <modules>
+        <module>domain</module>
+        <module>api</module>
+        <module>infra</module>
+        <module>application</module>
+        <module>component-tests</module>
+    </modules>
+
+    <properties>
+        <java.version>25</java.version>
+
+        <!-- Shared Kafka contracts. Bump to the released version once GlobalProtobufModels is tagged. -->
+        <global-protobuf-models.version>0.1.0-SNAPSHOT</global-protobuf-models.version>
+
+        <archunit.version>1.5.1</archunit.version>
+        <cucumber.version>8.0.4</cucumber.version>
+
+        <!-- Component tests need Docker, so they only run with -Pcomponent-tests -->
+        <skipComponentTests>true</skipComponentTests>
+    </properties>
+
+    <dependencyManagement>
+        <dependencies>
+            <dependency>
+                <groupId>org.cavalodetroia</groupId>
+                <artifactId>ctr-domain</artifactId>
+                <version>${project.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>org.cavalodetroia</groupId>
+                <artifactId>ctr-api</artifactId>
+                <version>${project.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>org.cavalodetroia</groupId>
+                <artifactId>ctr-infra</artifactId>
+                <version>${project.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>org.cavalodetroia</groupId>
+                <artifactId>ctr-application</artifactId>
+                <version>${project.version}</version>
+            </dependency>
+
+            <dependency>
+                <groupId>org.cavalodetroia</groupId>
+                <artifactId>global-protobuf-models</artifactId>
+                <version>${global-protobuf-models.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>com.tngtech.archunit</groupId>
+                <artifactId>archunit-junit5</artifactId>
+                <version>${archunit.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>io.cucumber</groupId>
+                <artifactId>cucumber-bom</artifactId>
+                <version>${cucumber.version}</version>
+                <type>pom</type>
+                <scope>import</scope>
+            </dependency>
+        </dependencies>
+    </dependencyManagement>
+
+    <repositories>
+        <!-- Declared first so every other dependency keeps coming from Maven Central -->
+        <repository>
+            <id>central</id>
+            <url>https://repo.maven.apache.org/maven2</url>
+            <snapshots>
+                <enabled>false</enabled>
+            </snapshots>
+        </repository>
+        <!-- GlobalProtobufModels releases. Needs a read:packages token in ~/.m2/settings.xml (see README) -->
+        <repository>
+            <id>github</id>
+            <url>https://maven.pkg.github.com/CavaloD3Troia/GlobalProtobufModels</url>
+            <snapshots>
+                <enabled>false</enabled>
+            </snapshots>
+        </repository>
+    </repositories>
+
+    <build>
+        <plugins>
+            <!-- Every module tests with Mockito: load it as a Java agent instead of letting it self-attach (the JDK warns) -->
+            <plugin>
+                <artifactId>maven-dependency-plugin</artifactId>
+                <executions>
+                    <execution>
+                        <goals>
+                            <goal>properties</goal>
+                        </goals>
+                    </execution>
+                </executions>
+            </plugin>
+            <plugin>
+                <artifactId>maven-surefire-plugin</artifactId>
+                <configuration>
+                    <!-- -Xshare:off: class data sharing is not compatible with the agent and only adds a warning -->
+                    <argLine>-javaagent:${org.mockito:mockito-core:jar} -Xshare:off</argLine>
+                </configuration>
+            </plugin>
+        </plugins>
+    </build>
+
+    <profiles>
+        <profile>
+            <id>component-tests</id>
+            <properties>
+                <skipComponentTests>false</skipComponentTests>
+            </properties>
+        </profile>
+    </profiles>
+</project>
