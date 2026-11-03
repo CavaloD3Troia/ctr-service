@@ -1,0 +1,9 @@
+# Deployed environments. No defaults on purpose: a missing variable stops the app at startup instead of
+# letting it look for a database on localhost. Credentials come from the platform's secret store.
+spring:
+  datasource:
+    url: ${DB_URL}
+    username: ${DB_USERNAME}
+    password: ${DB_PASSWORD}
+  kafka:
+    bootstrap-servers: ${KAFKA_BOOTSTRAP_SERVERS}

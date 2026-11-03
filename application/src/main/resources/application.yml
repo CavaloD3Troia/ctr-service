@@ -1,14 +1,9 @@
-# Defaults point at the dependencies started by `docker compose up -d`, so the app runs from the IDE as is.
-# The container (`make up`) overrides them through the environment variables in docker-compose.yml.
+# Shared by every profile. Where to find Postgres and Kafka is per profile: run with `dev`, `test` or `prod`
+# (SPRING_PROFILES_ACTIVE or --spring.profiles.active). Without one the app has no database and does not start.
 spring:
   application:
     name: ctr-service
-  datasource:
-    url: ${DB_URL:jdbc:postgresql://localhost:5432/ctr}
-    username: ${DB_USERNAME:ctr}
-    password: ${DB_PASSWORD:ctr}
   kafka:
-    bootstrap-servers: ${KAFKA_BOOTSTRAP_SERVERS:localhost:9092}
     producer:
       value-serializer: org.cavalodetroia.ctr.infra.kafka.ProtobufSerializer
     consumer:
@@ -22,6 +17,7 @@ spring:
     problemdetails:
       enabled: true
 
+# Bound to CtrKafkaProperties
 ctr:
   kafka:
     topic: ctr.event.created.v1

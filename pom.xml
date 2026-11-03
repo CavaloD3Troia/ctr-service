@@ -36,8 +36,9 @@
         <archunit.version>1.5.1</archunit.version>
         <cucumber.version>8.0.4</cucumber.version>
 
-        <!-- Component tests need Docker, so they only run with -Pcomponent-tests -->
+        <!-- Component and integration tests need Docker, so they only run with -Pcomponent-tests / -Pintegration-tests -->
         <skipComponentTests>true</skipComponentTests>
+        <skipIntegrationTests>true</skipIntegrationTests>
     </properties>
 
     <dependencyManagement>
@@ -130,6 +131,12 @@
             <id>component-tests</id>
             <properties>
                 <skipComponentTests>false</skipComponentTests>
+            </properties>
+        </profile>
+        <profile>
+            <id>integration-tests</id>
+            <properties>
+                <skipIntegrationTests>false</skipIntegrationTests>
             </properties>
         </profile>
     </profiles>

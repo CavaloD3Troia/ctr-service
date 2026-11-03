@@ -3,17 +3,17 @@ package org.cavalodetroia.ctr.componenttests.config;
 import io.cucumber.spring.CucumberContextConfiguration;
 import org.cavalodetroia.ctr.application.CtrApplication;
 import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
 
 /**
- * The real app on a random port, pointed at the containers. One context for every scenario.
+ * The real app on a random port with the {@code test} profile, pointed at the containers. One context for every
+ * scenario.
  */
 @CucumberContextConfiguration
-@SpringBootTest(
-        classes = CtrApplication.class,
-        webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT,
-        properties = "logging.level.org.apache.kafka=WARN")
+@SpringBootTest(classes = CtrApplication.class, webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)
+@ActiveProfiles("test")
 public class CucumberSpringConfiguration {
 
     @DynamicPropertySource

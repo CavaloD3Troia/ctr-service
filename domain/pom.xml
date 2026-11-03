@@ -31,4 +31,33 @@
             <scope>test</scope>
         </dependency>
     </dependencies>
+
+    <build>
+        <plugins>
+            <!-- ArchitectureTest stops the code from using a framework; this stops the jar from reaching the classpath -->
+            <plugin>
+                <artifactId>maven-enforcer-plugin</artifactId>
+                <executions>
+                    <execution>
+                        <id>domain-depends-only-on-the-jdk</id>
+                        <goals>
+                            <goal>enforce</goal>
+                        </goals>
+                        <configuration>
+                            <rules>
+                                <bannedDependencies>
+                                    <excludes>
+                                        <exclude>org.springframework*</exclude>
+                                        <exclude>org.jooq*</exclude>
+                                        <exclude>org.apache.kafka*</exclude>
+                                    </excludes>
+                                    <message>ctr-domain depends on the JDK only: no Spring, jOOQ or Kafka</message>
+                                </bannedDependencies>
+                            </rules>
+                        </configuration>
+                    </execution>
+                </executions>
+            </plugin>
+        </plugins>
+    </build>
 </project>
