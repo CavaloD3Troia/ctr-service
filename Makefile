@@ -14,13 +14,17 @@ endif
 
 .PHONY: help
 help: ## Show this help
-	@grep -hE '^[a-zA-Z_-]+:.*?## ' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*?## "}; {printf "  \033[36m%-15s\033[0m %s\n", $$1, $$2}'
+	@grep -hE '^[a-zA-Z_-]+:.*?## ' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*?## "}; {printf "  \033[36m%-16s\033[0m %s\n", $$1, $$2}'
 
 # --- Build and test ---------------------------------------------------------------------------
 
 .PHONY: build
 build: ## Compile and run the unit and architecture tests
 	./mvnw -B clean verify
+
+.PHONY: integration-test
+integration-test: ## Run the *IT tests of the application module (Postgres, Kafka and MinIO in Testcontainers, needs Docker)
+	$(TESTCONTAINERS_ENV) ./mvnw -B clean verify -pl application -am -Pintegration-tests
 
 .PHONY: component-test
 component-test: ## Run the Cucumber component tests (Postgres, Kafka and MinIO in Testcontainers, needs Docker)

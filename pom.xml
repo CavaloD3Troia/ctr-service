@@ -40,8 +40,9 @@
         <!-- The S3 client, for the HEAD that confirms an uploaded clip -->
         <aws-sdk.version>2.57.9</aws-sdk.version>
 
-        <!-- Component tests need Docker, so they only run with -Pcomponent-tests -->
+        <!-- Component and integration tests need Docker, so they only run with -Pcomponent-tests / -Pintegration-tests -->
         <skipComponentTests>true</skipComponentTests>
+        <skipIntegrationTests>true</skipIntegrationTests>
     </properties>
 
     <dependencyManagement>
@@ -146,6 +147,12 @@
             <id>component-tests</id>
             <properties>
                 <skipComponentTests>false</skipComponentTests>
+            </properties>
+        </profile>
+        <profile>
+            <id>integration-tests</id>
+            <properties>
+                <skipIntegrationTests>false</skipIntegrationTests>
             </properties>
         </profile>
     </profiles>
