@@ -12,7 +12,7 @@
 
     <artifactId>ctr-infra</artifactId>
     <name>ctr-infra</name>
-    <description>Adapters to the outside world: Postgres (jOOQ + Flyway) and Kafka (protobuf)</description>
+    <description>Adapters to the outside world: Postgres (jOOQ + Liquibase) and Kafka (protobuf)</description>
 
     <dependencies>
         <dependency>
@@ -31,11 +31,7 @@
         </dependency>
         <dependency>
             <groupId>org.springframework.boot</groupId>
-            <artifactId>spring-boot-starter-flyway</artifactId>
-        </dependency>
-        <dependency>
-            <groupId>org.flywaydb</groupId>
-            <artifactId>flyway-database-postgresql</artifactId>
+            <artifactId>spring-boot-starter-liquibase</artifactId>
         </dependency>
         <dependency>
             <groupId>org.postgresql</groupId>
@@ -58,7 +54,9 @@
 
     <build>
         <plugins>
-            <!-- Generates the jOOQ table classes from the Flyway migrations, so the build needs no database -->
+            <!-- Generates the jOOQ table classes from the Liquibase changesets (formatted SQL), so the build needs no
+                 database. parseIgnoreComments lets a Postgres-only statement the parser rejects sit between the
+                 "[jooq ignore start]" and "[jooq ignore stop]" SQL comments -->
             <plugin>
                 <groupId>org.jooq</groupId>
                 <artifactId>jooq-codegen-maven</artifactId>
@@ -88,11 +86,15 @@
                             <properties>
                                 <property>
                                     <key>scripts</key>
-                                    <value>src/main/resources/db/migration/*.sql</value>
+                                    <value>src/main/resources/db/changelog/changes/*.sql</value>
                                 </property>
                                 <property>
                                     <key>sort</key>
-                                    <value>flyway</value>
+                                    <value>alphanumeric</value>
+                                </property>
+                                <property>
+                                    <key>parseIgnoreComments</key>
+                                    <value>true</value>
                                 </property>
                                 <property>
                                     <key>defaultNameCase</key>

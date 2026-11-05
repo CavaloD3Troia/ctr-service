@@ -1,0 +1,6 @@
+# Applies every file in changes/ in name order. One schema change = one new NNNN-<what>.sql file there;
+# never edit a file once it is merged (Liquibase stores a checksum per changeset and fails on a mismatch).
+databaseChangeLog:
+  - includeAll:
+      path: changes/
+      relativeToChangelogFile: true
