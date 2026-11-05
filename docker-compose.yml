@@ -5,7 +5,7 @@ name: ctr-service
 
 # MinIO no longer publishes images, so this is Chainguard's build of it, pinned by digest (minio
 # RELEASE.2026-10-23T20-06-51Z). Component tests use the same image (component-tests/.../config/Containers)
-x-minio-image: &minio-image cgr.dev/chainguard/minio:latest@sha256:cee9a8e35885e93f14b3cb32960e5017aff74e2adfb52ba87c65003b0163886b
+x-minio-image: &minio-image cgr.dev/chainguard/minio@sha256:cee9a8e35885e93f14b3cb32960e5017aff74e2adfb52ba87c65003b0163886b
 # Local only: the well-known MinIO defaults, also the defaults of ctr.storage in application.yml
 x-minio-credentials: &minio-credentials
   MINIO_ROOT_USER: minioadmin

@@ -22,5 +22,8 @@ public class CucumberSpringConfiguration {
         registry.add("spring.datasource.username", Containers.POSTGRES::getUsername);
         registry.add("spring.datasource.password", Containers.POSTGRES::getPassword);
         registry.add("spring.kafka.bootstrap-servers", Containers.KAFKA::getBootstrapServers);
+        registry.add("ctr.storage.endpoint", Containers.MINIO::getS3URL);
+        registry.add("ctr.storage.access-key", Containers.MINIO::getUserName);
+        registry.add("ctr.storage.secret-key", Containers.MINIO::getPassword);
     }
 }
