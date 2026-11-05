@@ -34,6 +34,11 @@
 
     <build>
         <plugins>
+            <!-- 80% line coverage from the unit tests (configured in the root pom) -->
+            <plugin>
+                <groupId>org.jacoco</groupId>
+                <artifactId>jacoco-maven-plugin</artifactId>
+            </plugin>
             <!-- The boundary rules stop the code from using a framework; this stops the jar from reaching the classpath -->
             <plugin>
                 <artifactId>maven-enforcer-plugin</artifactId>
