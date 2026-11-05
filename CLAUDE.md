@@ -33,7 +33,22 @@ The contracts jar must be in `~/.m2`: a GitHub Packages `read:packages` token, o
 | `application` | `CtrApplication`, `wiring/` (builds domain services with `new`), `application.yml` plus `application-{dev,test,prod}.yml` | Contain business logic |
 | `component-tests` | Cucumber, black box | Reach into internals beyond what a scenario must observe |
 
-- `ArchitectureTest` enforces this. Never weaken a rule to make code compile; move the code.
+- `ArchitectureTest` enforces this with the rules defined in `HexagonalRules` (DEC-0005 §Enforcement). Never weaken
+  a rule to make code compile; move the code. The rules:
+  - `LAYERS`: dependencies point inward. Nothing uses `application`; `api` and `infra` are used by `application` only.
+  - `DOMAIN_DEPENDS_ONLY_ON_THE_JDK`: `domain` references `java..` and itself, nothing else.
+  - `NO_CYCLES`: no cycles between the modules.
+  - `API_HAS_NO_PERSISTENCE_OR_MESSAGING_TYPES`: no jOOQ, JDBC, Kafka, protobuf or contract types in `api`.
+  - `INFRA_HAS_NO_WEB_TYPES`: no Spring MVC annotations, servlet types or `api` types in `infra` (Spring's HTTP
+    client is fine).
+  - `ENTRY_POINTS_LIVE_IN_THEIR_LAYER`: `@RestController`, `@Controller`, `@RestControllerAdvice` and
+    `@ControllerAdvice` only in `api`; `@KafkaListener` only in `infra`.
+  - `APPLICATION_HOLDS_NO_ADAPTER_CODE`: no jOOQ, JDBC, Kafka, protobuf or contract types in `application`. It wires
+    adapters to ports; it does not adapt.
+  - `INFRA_ADAPTERS_ARE_INDEPENDENT`: `infra.kafka`, `infra.persistence`, … never reference each other. What two
+    adapters share belongs in the domain or behind a port.
+- `ArchitectureRulesTest` proves each rule rejects a violation, using the fixtures under `archfixtures/` in the test
+  sources of `application` (one minimal violating class per rule). A new rule comes with its fixture and negative test.
 - Ports are named for the capability (`EventPublisher`), adapters for the technology (`EventCreatedPublisher`,
   `JooqEventRepository`).
 - Domain services get no annotations; add a `@Bean` per service in `application/wiring/<Feature>Wiring`.
@@ -137,6 +152,13 @@ of the entity whose ordering matters (`event_id`).
 - Names `should_<expected>_when_<condition>`, AssertJ only, Mockito for ports only. Fixtures are ObjectMother
   builders with sensible defaults.
 - Every serializer has a `null` (tombstone) test; every two-way converter has a round-trip test.
+- **Coverage gate.** JaCoCo fails `make build` when the unit tests cover less than **80% of the lines** of `domain`,
+  `api` or `infra` (per module, `BUNDLE`/`LINE` in the root `pom.xml`). Reports: `<module>/target/site/jacoco/`
+  (HTML and XML). Excluded: the generated jOOQ classes and `*Properties` records. `application` (covered by
+  `CtrApplicationIT`) and `component-tests` are not gated. Never lower the threshold or widen the exclusions to pass;
+  add the missing unit test (converters, publishers and listeners with a mocked `KafkaTemplate`, repositories with
+  jOOQ's `MockConnection`). A run that selects no tests in a module (`-Dtest=...`) writes no coverage data, and the
+  check is skipped there; only a module whose tests ran is measured.
 - A component scenario asserts **both** sides: the HTTP response and what landed in Postgres or Kafka.
 - Component-test flakes to avoid:
   - Await asynchronous effects with Awaitility; never `sleep`.

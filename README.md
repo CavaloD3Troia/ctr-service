@@ -24,7 +24,9 @@ Kafka or SQL.
 | `application` | `CtrApplication`, `wiring/EventWiring` (builds the domain service), `application.yml` and one file per profile |
 | `component-tests` | Cucumber against the whole app, with Postgres and Kafka in Testcontainers |
 
-`ArchitectureTest` in `application` breaks the build if a layer reaches where it shouldn't.
+`ArchitectureTest` in `application` breaks the build if a layer reaches where it shouldn't, if a technology type
+(jOOQ, Kafka, protobuf, Spring MVC) turns up in the wrong layer, or if a controller or Kafka listener is declared
+outside its adapter. `ArchitectureRulesTest` proves each rule rejects a violation.
 
 ## Running it locally
 
@@ -78,7 +80,7 @@ Our own settings are typed records bound by prefix:
 
 | Command | Runs |
 |---|---|
-| `make build` | Unit tests in every module, plus `ArchitectureTest` and the check that `domain` pulls in no Spring, jOOQ or Kafka jar |
+| `make build` | Unit tests in every module, plus `ArchitectureTest`, the check that `domain` pulls in no Spring, jOOQ or Kafka jar, and the JaCoCo gate: at least 80% line coverage in each of `domain`, `api` and `infra` (reports in `<module>/target/site/jacoco/index.html`) |
 | `make integration-test` | All of that, plus the `*IT` tests: `CtrApplicationIT` starts the app with the `dev` profile and checks `/actuator/health` |
 | `make component-test` | All of that, plus `component-tests/src/test/resources/features/events.feature` |
 
