@@ -16,12 +16,15 @@ Kafka or SQL.
 | `domain` | `model/upload/UploadSession` (the registration and clip confirmation rules, and the state of each part) and its values (`Window` holds the overlap rule), `service/UploadSessionService`, and the ports: `port/in/RegisterCamera`, `GetUploadSession` and `CompleteClip` (called by api) and `port/out/EventRepository`, `UploadSessionRepository`, `IdempotencyStore` and `ClipStorage` (implemented by infra). Depends on the JDK only. |
 | `api` | `controller/UploadSessionController`, the request and response records in `domain/`, `converter/`, `error/ApiExceptionHandler` (problem+json), `filter/CorrelationIdFilter` and `idempotency/IdempotentRequests` |
 | `infra` | `repository/` (jOOQ adapters), `converter/` (domain ↔ jOOQ records), `storage/` (`S3ClipStorage`, the S3 `HEAD` behind `ClipStorage`, and `S3ClientFactory`), the Liquibase changelog in `resources/db/changelog/`, and `kafka/serialization/` (the protobuf serializer for the publishers to come) |
-| `application` | `CtrApplication`, `config/StorageProperties`, `wiring/UploadWiring` (builds the domain service and the S3 client), and `application.yml` |
+| `application` | `CtrApplication`, `config/StorageProperties`, `wiring/UploadWiring` (builds the domain service and the S3 client), `application.yml` and one file per profile (see [Profiles](#profiles)) |
 | `component-tests` | Cucumber against the whole app, with Postgres, Kafka and MinIO in Testcontainers |
 
 Inside each module the first package level says what kind of class lives there, the second the concept (see
-`CLAUDE.md`). `ArchitectureTest` in `application` breaks the build if a layer reaches where it shouldn't, or a
-class in `controller`/`converter` is not named for it.
+`CLAUDE.md`). `ArchitectureRulesTest` in `application` breaks the build if a layer reaches where it shouldn't, if a
+technology type (jOOQ, JDBC, Kafka, protobuf, Spring MVC) turns up in the wrong layer, if a controller, error handler
+or Kafka listener is declared outside its package, or if a class in `controller`/`converter` is not named for it.
+`CLAUDE.md` lists the rules; each has a fixture under `archfixtures/` that the test proves it rejects. The `domain`
+pom also refuses any Spring, jOOQ or Kafka jar on its classpath.
 
 ## API
 
@@ -226,8 +229,9 @@ docker compose up -d        # or: make deps-up, which also waits until they are 
 ```
 
 A one-shot `minio-init` container creates the `cdt-videos` bucket and exits. Then run the shared **CtrApplication**
-run configuration (from `.run/`). `application.yml` already points at `localhost:5432`, `localhost:9092` and MinIO on
-`localhost:9000` (console on http://localhost:9001, `minioadmin` / `minioadmin`).
+run configuration (from `.run/`). It activates the `dev` profile (see [Profiles](#profiles)), which already points at
+`localhost:5432`, `localhost:9092` and MinIO on `localhost:9000` (console on http://localhost:9001, `minioadmin` /
+`minioadmin`).
 
 **To run it all in Docker**, use:
 
@@ -260,7 +264,8 @@ curl -i localhost:8080/api/v1/upload-sessions/<sessionId>/cameras/LEFT/parts/0/c
   -d '{"sizeBytes":1048576,"etag":"<ETag from mc stat>","startMs":0,"durationMs":300000}'
 ```
 
-`make help` lists every target. The app reads these environment variables, which default to the compose setup:
+`make help` lists every target. The app reads these environment variables, which default to the compose setup with
+the `dev` profile and are required with `prod` (see [Profiles](#profiles)):
 
 | Variable | Default | |
 |---|---|---|
@@ -274,12 +279,35 @@ curl -i localhost:8080/api/v1/upload-sessions/<sessionId>/cameras/LEFT/parts/0/c
 The S3 client uses path-style URLs and gives up after 5 s: two attempts of at most 3 s each, a 2 s connection timeout
 and a 3 s socket timeout (`S3ClientFactory`). That is why a storage outage answers `503` instead of hanging.
 
+## Profiles
+
+The app needs an active profile (`SPRING_PROFILES_ACTIVE` or `--spring.profiles.active`); without one it has no
+database and does not start. `application.yml` holds what every profile shares; where Postgres and the bucket are is
+in `application-<profile>.yml`, next to it in `application/src/main/resources`.
+
+| Profile | Used by | Postgres and S3 |
+|---|---|---|
+| `dev` | the IDE run configuration, `make run`, `make up` (`docker-compose.yml` sets it), `CtrApplicationIT` | `DB_URL`, `DB_USERNAME`, `DB_PASSWORD`, `CTR_STORAGE_BUCKET`, `S3_ENDPOINT`, `S3_REGION`, `S3_ACCESS_KEY`, `S3_SECRET_KEY`, defaulting to the compose setup (the table above) |
+| `test` | the component tests | supplied by Testcontainers; the file only names the bucket (`cdt-videos`) and the region |
+| `prod` | deployed environments | the same eight variables, **required**: the app stops at startup when one is missing, and `ProfilesTest` checks the file carries no default (`S3_ENDPOINT` is set to an empty value on AWS) |
+
+To run with a profile, pass it to the jar with the variables set, or put it in the container's environment:
+
+```sh
+java -jar application/target/ctr-service-exec.jar --spring.profiles.active=prod   # `make run` passes dev
+docker run -e SPRING_PROFILES_ACTIVE=prod -e DB_URL=... ctr-service:local
+```
+
+`KAFKA_BOOTSTRAP_SERVERS` stays in `application.yml`, with its compose default, for every profile until the Kafka
+producer configuration arrives.
+
 ## Tests
 
 | Command | Runs |
 |---|---|
-| `make build` | Unit tests in every module, plus `ArchitectureTest` |
-| `make component-test` | All of that, plus the features in `component-tests/src/test/resources/features` |
+| `make build` | Unit tests in every module, plus `ArchitectureRulesTest`, the check that `domain` pulls in no Spring, jOOQ or Kafka jar, and the JaCoCo gate: at least 80% line coverage in each of `domain`, `api` and `infra` (reports in `<module>/target/site/jacoco/index.html`) |
+| `make integration-test` | The unit tests of `application` and the modules it depends on, plus the `*IT` tests of `application`: `CtrApplicationIT` starts the app with the `dev` profile against Postgres, Kafka and MinIO in Testcontainers and checks `/actuator/health` |
+| `make component-test` | All of `make build`, plus the features in `component-tests/src/test/resources/features`, against the app on the `test` profile |
 
 `complete_clip.feature` registers cameras over HTTP, puts their clips into the MinIO container and confirms them,
 then checks the answer, the rows in Postgres and the log lines: an object present, absent, with another size or
