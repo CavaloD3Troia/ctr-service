@@ -1,7 +1,7 @@
 package org.cavalodetroia.ctr.domain.port.out;
 
-import org.cavalodetroia.ctr.domain.exception.CameraSetConflictException;
 import org.cavalodetroia.ctr.domain.exception.OpenSessionAlreadyExistsException;
+import org.cavalodetroia.ctr.domain.exception.UploadSessionChangedException;
 import org.cavalodetroia.ctr.domain.model.upload.UploadCamera;
 import org.cavalodetroia.ctr.domain.model.upload.UploadSession;
 
@@ -28,11 +28,13 @@ public interface UploadSessionRepository {
     void create(UploadSession session);
 
     /**
-     * Stores a camera that joined: the camera and its clips, and the session's new {@code updatedAt}.
+     * Stores a camera that joined: the camera and its clips, and the session's new {@code updatedAt} and
+     * {@code version}. Stored only while the session is still open and still at the version it was read at, one
+     * below {@code session.version()}; otherwise nothing is written.
      *
      * @param session the session returned by {@link UploadSession#join}
      * @param camera  the camera that joined
-     * @throws CameraSetConflictException when the same camera was registered in the meantime
+     * @throws UploadSessionChangedException when the session changed or closed since it was read
      */
     void addCamera(UploadSession session, UploadCamera camera);
 }

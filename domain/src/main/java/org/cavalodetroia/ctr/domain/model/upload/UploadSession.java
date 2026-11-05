@@ -26,6 +26,8 @@ import java.util.stream.Stream;
  * @param venue     the pitch, set by the first camera
  * @param createdAt when the first camera opened it
  * @param updatedAt when a camera last registered
+ * @param version   how many times the session changed: 0 when opened, plus one for each camera that joins. A change is
+ *                  only stored over the version it was read at, so two cameras joining at once can't both win
  * @param cameras   the registered cameras, in registration order
  * @param clips     every camera's clips
  * @param parts     one per part index, created with the first camera
@@ -36,6 +38,7 @@ public record UploadSession(UUID id,
                             VenueSpec venue,
                             Instant createdAt,
                             Instant updatedAt,
+                            long version,
                             List<UploadCamera> cameras,
                             List<UploadClip> clips,
                             List<UploadPart> parts) {
@@ -78,7 +81,7 @@ public record UploadSession(UUID id,
         }
         final VenueSpec venue = first.venue().toSpec();
         final UploadCamera camera = registeredCamera(bucket, eventId, id, first, now);
-        final UploadSession session = new UploadSession(id, eventId, SessionStatus.OPEN, venue, now, now,
+        final UploadSession session = new UploadSession(id, eventId, SessionStatus.OPEN, venue, now, now, 0,
                 List.of(camera), pendingClips(eventId, id, first), waitingParts(first.partCount()));
         return new RegistrationResult(session, camera, false);
     }
@@ -86,7 +89,7 @@ public record UploadSession(UUID id,
     /**
      * A later camera joins the session: the camera and a {@link ClipStatus#PENDING} clip for each of its parts. The
      * parts are already there. A venue on this registration is ignored, whatever its format: the first camera set
-     * it.
+     * it. The session comes back one version up.
      *
      * @param next   the registration of the joining camera
      * @param bucket the bucket the clips are uploaded to
@@ -104,7 +107,7 @@ public record UploadSession(UUID id,
         requireSamePartCount(next.partCount());
 
         final UploadCamera camera = registeredCamera(bucket, eventId, id, next, now);
-        final UploadSession session = new UploadSession(id, eventId, status, venue, createdAt, now,
+        final UploadSession session = new UploadSession(id, eventId, status, venue, createdAt, now, version + 1,
                 append(cameras, List.of(camera)), append(clips, pendingClips(eventId, id, next)), parts);
         return new RegistrationResult(session, camera, next.hasVenue());
     }

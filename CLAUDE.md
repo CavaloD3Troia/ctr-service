@@ -149,6 +149,9 @@ of the entity whose ordering matters (`event_id`).
 - The port speaks domain types only. The adapter owns the converter and **translates exceptions**: jOOQ/JDBC
   exceptions become domain exceptions (for example, a violation of `upload_session_one_open_per_event` becomes
   `OpenSessionAlreadyExistsException`).
+- A write that depends on what was read is guarded by the row's `version`: `UPDATE … WHERE status = 'OPEN' AND
+  version = <read>`, and no row updated becomes a domain exception (`UploadSessionChangedException`). The service
+  then reads again and decides again (`UploadSessionService`); never lock across port calls.
 - Once a converter goes both ways, test the round trip (`toDomain(toRecord(x)).equals(x)`).
 - **Retries.** Retry only transient failures (connection loss, timeouts), with resilience4j `@Retry`:
   - Limit it to those exceptions with a retry predicate.

@@ -1,7 +1,9 @@
 package org.cavalodetroia.ctr.domain.service;
 
+import org.cavalodetroia.ctr.domain.exception.CameraSetConflictException;
 import org.cavalodetroia.ctr.domain.exception.EventNotFoundException;
 import org.cavalodetroia.ctr.domain.exception.OpenSessionAlreadyExistsException;
+import org.cavalodetroia.ctr.domain.exception.UploadSessionChangedException;
 import org.cavalodetroia.ctr.domain.model.upload.Camera;
 import org.cavalodetroia.ctr.domain.model.upload.RegistrationResult;
 import org.cavalodetroia.ctr.domain.model.upload.UploadCamera;
@@ -29,11 +31,13 @@ import static org.cavalodetroia.ctr.domain.model.upload.CameraRegistrations.open
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 /**
- * AC-1, AC-2, AC-6, AC-11: the use case opens or joins the event's session through the ports.
+ * AC-1, AC-2, AC-6, AC-11: the use case opens or joins the event's session through the ports, and registers again
+ * against what is stored when a concurrent registration won.
  */
 @ExtendWith(MockitoExtension.class)
 class UploadSessionServiceTest {
@@ -106,12 +110,42 @@ class UploadSessionServiceTest {
     }
 
     @Test
-    void should_propagate_when_theRetryRacesAgain() {
+    void should_readTheSessionAgainAndJoinWhatIsThere_when_anotherCameraJoinedInTheMeantime() {
+        final UploadSession left = openedBy(Camera.LEFT);
+        final UploadSession leftAndRight = left.join(joining(Camera.RIGHT), BUCKET, JOINED_AT).session();
+        when(events.exists(EVENT_ID)).thenReturn(true);
+        when(sessions.findOpenByEvent(EVENT_ID)).thenReturn(Optional.of(left), Optional.of(leftAndRight));
+        doThrow(new UploadSessionChangedException(left.id())).when(sessions).addCamera(any(), any());
+
+        // A second RIGHT read the session with LEFT only; read again, it finds RIGHT already there
+        assertThatThrownBy(() -> service().register(EVENT_ID, joining(Camera.RIGHT)))
+                .isInstanceOf(CameraSetConflictException.class);
+        verify(sessions, times(2)).findOpenByEvent(EVENT_ID);
+        verify(sessions, times(1)).addCamera(any(), any());
+    }
+
+    @Test
+    void should_joinAfterReadingAgain_when_theSessionChangedOnceInTheMeantime() {
+        final UploadSession left = openedBy(Camera.LEFT);
+        when(events.exists(EVENT_ID)).thenReturn(true);
+        when(sessions.findOpenByEvent(EVENT_ID)).thenReturn(Optional.of(left));
+        doThrow(new UploadSessionChangedException(left.id())).doNothing().when(sessions).addCamera(any(), any());
+
+        final RegistrationResult result = service().register(EVENT_ID, joining(Camera.RIGHT));
+
+        assertThat(result.session().cameras()).extracting(UploadCamera::camera)
+                .containsExactly(Camera.LEFT, Camera.RIGHT);
+        verify(sessions, times(2)).addCamera(any(), any());
+    }
+
+    @Test
+    void should_propagate_when_everyAttemptRaces() {
         when(events.exists(EVENT_ID)).thenReturn(true);
         when(sessions.findOpenByEvent(EVENT_ID)).thenReturn(Optional.empty());
         doThrow(new OpenSessionAlreadyExistsException(EVENT_ID, null)).when(sessions).create(any());
 
         assertThatThrownBy(() -> service().register(EVENT_ID, first(Camera.LEFT)))
                 .isInstanceOf(OpenSessionAlreadyExistsException.class);
+        verify(sessions, times(3)).create(any());
     }
 }

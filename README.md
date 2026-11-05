@@ -61,6 +61,11 @@ venue; a second one joins it. A session ends with the cameras `SINGLE`, or `LEFT
 It writes the session (when new), the camera, one `PENDING` row in `upload_clip` per part of this camera, and, with
 the first camera only, one `WAITING` row in `upload_part` per part.
 
+Cameras may register at the same time. Two first cameras can't both open a session
+(`upload_session_one_open_per_event`), and a camera only joins over the `version` of the session it read. The one
+that loses reads the session again and registers against it, so the event still gets one session, each camera once,
+and its parts once.
+
 | Header | |
 |---|---|
 | `Idempotency-Key` (optional, up to 255 characters) | The same key and body within 24 hours return the first `201` again without writing anything. The same key with another body is `422`. |
@@ -131,7 +136,10 @@ curl -i localhost:8080/api/v1/events/0b5c3c38-4a8e-4f53-8c0e-5b0b8d8f2a11/upload
 
 `register_camera.feature` registers cameras over HTTP and checks the response, the rows in Postgres and the log lines
 of the request (LEFT then RIGHT, SINGLE alone, each 409, the replayed `Idempotency-Key`, standard venue dimensions,
-a later camera's venue ignored whatever it holds, 404, 400, and the correlation id). `openapi.feature` checks what `/v3/api-docs` says about the endpoint.
+a later camera's venue ignored whatever it holds, 404, 400, and the correlation id). `concurrent_registration.feature`
+sends two cameras of each of 20 events at the same time, or one right after the other, and checks that each event
+has one session with each camera once and its parts once. `openapi.feature` checks what `/v3/api-docs` says about the
+endpoint.
 `schema.feature` checks that Liquibase applied every changeset to the empty
 database (tables, primary and foreign keys, the one-open-session index), that running the changelog again applies
 nothing, and that an event can't have two open upload sessions. After a run, the report is at
@@ -156,16 +164,17 @@ and records what it ran in the `databasechangelog` table.
 | `0001-create-event.sql` | `event` |
 | `0002-create-upload-tables.sql` | `upload_session` (at most one `OPEN` session per event), `upload_camera`, `upload_clip`, `upload_part` |
 | `0003-create-idempotency-key.sql` | `idempotency_key`: the stored response of each request with an `Idempotency-Key` (rows older than 24 hours are ignored) |
+| `0004-add-upload-session-version.sql` | `upload_session.version`: 0 when opened, plus one per camera that joins; a join is only stored over the version it read |
 
 To change the schema, add a changeset:
 
 1. Create the next file in `infra/src/main/resources/db/changelog/changes/`, numbered after the last one:
-   `0004-<what>.sql`.
+   `0005-<what>.sql`.
 2. Start it with the Liquibase header, then a `--changeset` line before each change:
    ```sql
    --liquibase formatted sql
 
-   --changeset ctr:0004-add-event-kickoff
+   --changeset ctr:0005-add-event-kickoff
    ALTER TABLE event ADD COLUMN kickoff_at TIMESTAMP WITH TIME ZONE;
    ```
 3. Run `make build`. jOOQ generates its classes from these files (no database needed), so the new tables and

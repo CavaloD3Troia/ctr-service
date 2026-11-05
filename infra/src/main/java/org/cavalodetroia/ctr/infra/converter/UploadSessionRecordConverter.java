@@ -39,6 +39,7 @@ public class UploadSessionRecordConverter {
         record.setVenueWidthM((float) session.venue().widthM());
         record.setCreatedAt(toOffsetDateTime(session.createdAt()));
         record.setUpdatedAt(toOffsetDateTime(session.updatedAt()));
+        record.setVersion(session.version());
         return record;
     }
 
@@ -83,6 +84,7 @@ public class UploadSessionRecordConverter {
                 venue,
                 session.getCreatedAt().toInstant(),
                 session.getUpdatedAt().toInstant(),
+                session.getVersion(),
                 cameras.stream().map(UploadSessionRecordConverter::toDomain).toList(),
                 clips.stream().map(UploadSessionRecordConverter::toDomain).toList(),
                 parts.stream().map(UploadSessionRecordConverter::toDomain).toList());

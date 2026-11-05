@@ -41,6 +41,7 @@ class UploadSessionRecordConverterTest {
         assertThat(record.getVenueLengthM()).isEqualTo(60.5f);
         assertThat(record.getVenueWidthM()).isEqualTo(40.25f);
         assertThat(record.getCreatedAt()).isEqualTo(OffsetDateTime.of(2026, 11, 5, 10, 0, 0, 0, ZoneOffset.UTC));
+        assertThat(record.getVersion()).isEqualTo(1L);
     }
 
     @Test

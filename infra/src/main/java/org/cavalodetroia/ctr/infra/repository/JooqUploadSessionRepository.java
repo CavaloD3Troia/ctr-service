@@ -1,7 +1,7 @@
 package org.cavalodetroia.ctr.infra.repository;
 
-import org.cavalodetroia.ctr.domain.exception.CameraSetConflictException;
 import org.cavalodetroia.ctr.domain.exception.OpenSessionAlreadyExistsException;
+import org.cavalodetroia.ctr.domain.exception.UploadSessionChangedException;
 import org.cavalodetroia.ctr.domain.model.upload.SessionStatus;
 import org.cavalodetroia.ctr.domain.model.upload.UploadCamera;
 import org.cavalodetroia.ctr.domain.model.upload.UploadSession;
@@ -27,16 +27,16 @@ import static org.cavalodetroia.ctr.infra.persistence.jooq.Tables.UPLOAD_PART;
 import static org.cavalodetroia.ctr.infra.persistence.jooq.Tables.UPLOAD_SESSION;
 
 /**
- * Each write runs in one transaction, so a registration lands whole or not at all. Unique violations that mean a
- * concurrent registration won become domain exceptions. Puts {@code session_id} in the MDC as soon as it is known.
+ * Each write runs in one transaction, so a registration lands whole or not at all. When a concurrent registration
+ * won, the write fails with a domain exception: a second open session for the event violates
+ * {@code upload_session_one_open_per_event}, and a camera joining a session that changed since it was read finds the
+ * {@code version} moved on. Puts {@code session_id} in the MDC as soon as it is known.
  */
 @Repository
 public class JooqUploadSessionRepository implements UploadSessionRepository {
 
     private static final String MDC_SESSION_ID = "session_id";
     private static final String UNIQUE_VIOLATION = "23505";
-    // Postgres names the primary key <table>_pkey; the generated Keys carry the names H2 gave them, so it is written out
-    private static final String CAMERA_PRIMARY_KEY = "upload_camera_pkey";
 
     private final DSLContext dsl;
     private final UploadSessionRecordConverter converter;
@@ -84,23 +84,23 @@ public class JooqUploadSessionRepository implements UploadSessionRepository {
     @Override
     public void addCamera(final UploadSession session, final UploadCamera camera) {
         MDC.put(MDC_SESSION_ID, session.id().toString());
-        try {
-            dsl.transaction(transaction -> {
-                final DSLContext db = transaction.dsl();
-                db.update(UPLOAD_SESSION)
-                        .set(UPLOAD_SESSION.UPDATED_AT, converter.toRecord(session).getUpdatedAt())
-                        .where(UPLOAD_SESSION.ID.eq(session.id()))
-                        .execute();
-                db.executeInsert(converter.toRecord(session.id(), camera));
-                db.batchInsert(clipRecords(session, List.of(camera))).execute();
-            });
-        } catch (RuntimeException e) {
-            if (isUniqueViolationOf(e, CAMERA_PRIMARY_KEY)) {
-                throw new CameraSetConflictException(session.id(),
-                        "camera " + camera.camera() + " was registered by a concurrent request");
+        dsl.transaction(transaction -> {
+            final DSLContext db = transaction.dsl();
+            // Postgres locks the row, so a concurrent join waits for this transaction, then finds the version
+            // moved on and updates nothing
+            final int updated = db.update(UPLOAD_SESSION)
+                    .set(UPLOAD_SESSION.UPDATED_AT, converter.toRecord(session).getUpdatedAt())
+                    .set(UPLOAD_SESSION.VERSION, session.version())
+                    .where(UPLOAD_SESSION.ID.eq(session.id()))
+                    .and(UPLOAD_SESSION.STATUS.eq(SessionStatus.OPEN.name()))
+                    .and(UPLOAD_SESSION.VERSION.eq(session.version() - 1))
+                    .execute();
+            if (updated == 0) {
+                throw new UploadSessionChangedException(session.id());
             }
-            throw e;
-        }
+            db.executeInsert(converter.toRecord(session.id(), camera));
+            db.batchInsert(clipRecords(session, List.of(camera))).execute();
+        });
     }
 
     private List<UploadCameraRecord> cameras(final UUID sessionId) {

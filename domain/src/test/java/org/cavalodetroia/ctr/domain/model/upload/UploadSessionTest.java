@@ -57,6 +57,18 @@ class UploadSessionTest {
                 new UploadPart(1, PartStatus.WAITING),
                 new UploadPart(2, PartStatus.WAITING));
         assertThat(result.venueIgnored()).isFalse();
+        assertThat(session.version()).isZero();
+    }
+
+    // The repository stores the joined session only over the version it was read at, one below the new one
+    @Test
+    void should_comeBackOneVersionUp_when_aCameraJoins() {
+        final UploadSession left = openedBy(Camera.LEFT);
+
+        final UploadSession joined = left.join(joining(Camera.RIGHT), BUCKET, JOINED_AT).session();
+
+        assertThat(joined.version()).isEqualTo(left.version() + 1);
+        assertThat(joined.updatedAt()).isEqualTo(JOINED_AT);
     }
 
     @Test
@@ -174,7 +186,8 @@ class UploadSessionTest {
     void should_rejectJoining_when_theSessionIsCompleted() {
         final UploadSession open = openedBy(Camera.LEFT);
         final UploadSession completed = new UploadSession(open.id(), open.eventId(), SessionStatus.COMPLETED,
-                open.venue(), open.createdAt(), open.updatedAt(), open.cameras(), open.clips(), open.parts());
+                open.venue(), open.createdAt(), open.updatedAt(), open.version(), open.cameras(), open.clips(),
+                open.parts());
 
         assertThatThrownBy(() -> completed.join(joining(Camera.RIGHT), BUCKET, JOINED_AT))
                 .isInstanceOf(IllegalStateException.class);
@@ -193,7 +206,7 @@ class UploadSessionTest {
                     : clip);
         }
         final UploadSession session = new UploadSession(open.id(), open.eventId(), open.status(), open.venue(),
-                open.createdAt(), open.updatedAt(), open.cameras(), clips, open.parts());
+                open.createdAt(), open.updatedAt(), open.version(), open.cameras(), clips, open.parts());
 
         assertThat(session.partsUploaded(Camera.LEFT)).isEqualTo(expected);
         assertThat(session.partsUploaded(Camera.RIGHT)).isZero();

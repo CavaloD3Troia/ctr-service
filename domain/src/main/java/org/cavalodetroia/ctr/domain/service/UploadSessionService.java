@@ -3,6 +3,7 @@ package org.cavalodetroia.ctr.domain.service;
 import org.cavalodetroia.ctr.domain.common.Uuid7;
 import org.cavalodetroia.ctr.domain.exception.EventNotFoundException;
 import org.cavalodetroia.ctr.domain.exception.OpenSessionAlreadyExistsException;
+import org.cavalodetroia.ctr.domain.exception.UploadSessionChangedException;
 import org.cavalodetroia.ctr.domain.model.upload.CameraRegistration;
 import org.cavalodetroia.ctr.domain.model.upload.RegistrationResult;
 import org.cavalodetroia.ctr.domain.model.upload.UploadCamera;
@@ -25,6 +26,9 @@ import java.util.UUID;
 public class UploadSessionService implements RegisterCamera {
 
     private static final System.Logger LOGGER = System.getLogger(UploadSessionService.class.getName());
+    // A session takes at most two cameras, so a registration loses at most twice: to the camera that opened the
+    // session, then to one that joined it
+    private static final int MAX_ATTEMPTS = 3;
 
     private final EventRepository events;
     private final UploadSessionRepository sessions;
@@ -49,15 +53,30 @@ public class UploadSessionService implements RegisterCamera {
         if (!events.exists(eventId)) {
             throw new EventNotFoundException(eventId);
         }
-        RegistrationResult result;
-        try {
-            result = openOrJoin(eventId, registration);
-        } catch (OpenSessionAlreadyExistsException raced) {
-            // Another first camera opened the session between our read and our insert: join that one instead
-            result = openOrJoin(eventId, registration);
-        }
+        final RegistrationResult result = openOrJoinUntilNoRace(eventId, registration);
         log(result);
         return result;
+    }
+
+    /**
+     * Another camera may write the event's session between our read and our write: it opened the session first
+     * ({@link OpenSessionAlreadyExistsException}) or joined it first ({@link UploadSessionChangedException}). Then
+     * nothing of ours was stored, so read the session again and register against what is there now.
+     */
+    private RegistrationResult openOrJoinUntilNoRace(final UUID eventId, final CameraRegistration registration) {
+        for (int attempt = 1; ; attempt++) {
+            try {
+                return openOrJoin(eventId, registration);
+            } catch (OpenSessionAlreadyExistsException | UploadSessionChangedException raced) {
+                if (attempt == MAX_ATTEMPTS) {
+                    throw raced;
+                }
+                final int failed = attempt;
+                LOGGER.log(Level.INFO, () -> "operation=registerCamera, message=Concurrent registration, reading the "
+                        + "session again camera='%s' attempt=%d race='%s'".formatted(registration.camera(), failed,
+                        raced.getClass().getSimpleName()));
+            }
+        }
     }
 
     private RegistrationResult openOrJoin(final UUID eventId, final CameraRegistration registration) {
