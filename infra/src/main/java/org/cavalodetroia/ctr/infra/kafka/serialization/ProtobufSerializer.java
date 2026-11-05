@@ -1,4 +1,4 @@
-package org.cavalodetroia.ctr.infra.kafka;
+package org.cavalodetroia.ctr.infra.kafka.serialization;
 
 import com.google.protobuf.MessageLite;
 import org.apache.kafka.common.serialization.Serializer;

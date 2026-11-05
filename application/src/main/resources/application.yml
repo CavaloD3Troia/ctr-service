@@ -12,21 +12,19 @@ spring:
   kafka:
     bootstrap-servers: ${KAFKA_BOOTSTRAP_SERVERS:localhost:9092}
     producer:
-      value-serializer: org.cavalodetroia.ctr.infra.kafka.ProtobufSerializer
-    consumer:
-      group-id: ctr-service
-      auto-offset-reset: earliest
-      # A message that cannot be parsed is logged and skipped instead of blocking the partition
-      value-deserializer: org.springframework.kafka.support.serializer.ErrorHandlingDeserializer
-      properties:
-        spring.deserializer.value.delegate.class: org.cavalodetroia.ctr.infra.kafka.EventCreatedDeserializer
+      value-serializer: org.cavalodetroia.ctr.infra.kafka.serialization.ProtobufSerializer
   mvc:
     problemdetails:
       enabled: true
 
-ctr:
-  kafka:
-    topic: ctr.event.created.v1
+# One JSON object per line, with the MDC (correlation_id, session_id, camera…) as top-level fields
+logging:
+  structured:
+    format:
+      console: logstash
+    json:
+      add:
+        service: ${spring.application.name}
 
 management:
   endpoints:
