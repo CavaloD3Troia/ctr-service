@@ -8,8 +8,7 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.CsvSource;
 
-import java.util.ArrayList;
-import java.util.List;
+import java.util.Arrays;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -23,7 +22,9 @@ import static org.cavalodetroia.ctr.domain.model.upload.CameraRegistrations.SESS
 import static org.cavalodetroia.ctr.domain.model.upload.CameraRegistrations.VENUE;
 import static org.cavalodetroia.ctr.domain.model.upload.CameraRegistrations.first;
 import static org.cavalodetroia.ctr.domain.model.upload.CameraRegistrations.joining;
+import static org.cavalodetroia.ctr.domain.model.upload.CameraRegistrations.leftAndRight;
 import static org.cavalodetroia.ctr.domain.model.upload.CameraRegistrations.openedBy;
+import static org.cavalodetroia.ctr.domain.model.upload.CameraRegistrations.withUploaded;
 
 /**
  * AC-11: the camera set, part count and venue rules of a session, and what the first and later cameras create
@@ -53,9 +54,9 @@ class UploadSessionTest {
                         tuple(Camera.LEFT, 1, KEY_PREFIX + "LEFT/1.mp4", ClipStatus.PENDING),
                         tuple(Camera.LEFT, 2, KEY_PREFIX + "LEFT/2.mp4", ClipStatus.PENDING));
         assertThat(session.parts()).containsExactly(
-                new UploadPart(0, PartStatus.WAITING),
-                new UploadPart(1, PartStatus.WAITING),
-                new UploadPart(2, PartStatus.WAITING));
+                new UploadPart(0, PartStatus.WAITING, null, null, null),
+                new UploadPart(1, PartStatus.WAITING, null, null, null),
+                new UploadPart(2, PartStatus.WAITING, null, null, null));
         assertThat(result.venueIgnored()).isFalse();
         assertThat(session.version()).isZero();
     }
@@ -197,16 +198,12 @@ class UploadSessionTest {
     @CsvSource({"'', 0", "'0', 1", "'0,2', 2"})
     void should_countTheUploadedClipsOfTheCamera_when_askedForPartsUploaded(final String uploaded,
                                                                           final int expected) {
-        final UploadSession open = openedBy(Camera.LEFT).join(joining(Camera.RIGHT), BUCKET, JOINED_AT).session();
-        final List<UploadClip> clips = new ArrayList<>();
-        for (final UploadClip clip : open.clips()) {
-            final boolean isUploaded = clip.camera() == Camera.LEFT
-                    && List.of(uploaded.split(",")).contains(String.valueOf(clip.partIndex()));
-            clips.add(isUploaded ? new UploadClip(clip.camera(), clip.partIndex(), clip.objectKey(), ClipStatus.UPLOADED)
-                    : clip);
-        }
-        final UploadSession session = new UploadSession(open.id(), open.eventId(), open.status(), open.venue(),
-                open.createdAt(), open.updatedAt(), open.version(), open.cameras(), clips, open.parts());
+        final int[] partIndexes = Arrays.stream(uploaded.split(","))
+                .filter(index -> !index.isEmpty())
+                .mapToInt(Integer::parseInt)
+                .toArray();
+
+        final UploadSession session = withUploaded(leftAndRight(), Camera.LEFT, partIndexes);
 
         assertThat(session.partsUploaded(Camera.LEFT)).isEqualTo(expected);
         assertThat(session.partsUploaded(Camera.RIGHT)).isZero();

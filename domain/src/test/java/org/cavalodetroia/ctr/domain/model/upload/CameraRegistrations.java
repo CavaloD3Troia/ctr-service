@@ -5,7 +5,13 @@ import org.cavalodetroia.ctr.domain.model.venue.VenueFormat;
 import org.cavalodetroia.ctr.domain.model.venue.VenueSpec;
 
 import java.time.Instant;
+import java.util.Arrays;
+import java.util.List;
+import java.util.Set;
 import java.util.UUID;
+import java.util.function.Function;
+import java.util.stream.Collectors;
+import java.util.stream.IntStream;
 
 /**
  * Registrations and sessions with sensible defaults: 3 parts, an 11-a-side pitch of 105 x 68 m.
@@ -48,5 +54,45 @@ public final class CameraRegistrations {
      */
     public static UploadSession openedBy(final Camera camera) {
         return UploadSession.open(SESSION_ID, EVENT_ID, first(camera), BUCKET, OPENED_AT).session();
+    }
+
+    /**
+     * The session LEFT opened and RIGHT joined, nothing uploaded.
+     */
+    public static UploadSession leftAndRight() {
+        return openedBy(Camera.LEFT).join(joining(Camera.RIGHT), BUCKET, JOINED_AT).session();
+    }
+
+    /**
+     * The session with these clips of the camera uploaded: 1 GiB, 5 minutes from the start of their part.
+     */
+    public static UploadSession withUploaded(final UploadSession session, final Camera camera,
+                                             final int... partIndexes) {
+        final Set<Integer> uploaded = IntStream.of(partIndexes).boxed().collect(Collectors.toSet());
+        return withClips(session, clip -> clip.camera() == camera && uploaded.contains(clip.partIndex())
+                ? new UploadClip(clip.camera(), clip.partIndex(), clip.objectKey(), ClipStatus.UPLOADED,
+                        1_073_741_824L, clip.partIndex() * 300_000L, 300_000L, JOINED_AT)
+                : clip);
+    }
+
+    /**
+     * The session with these parts in place of the ones with the same index.
+     */
+    public static UploadSession withParts(final UploadSession session, final UploadPart... parts) {
+        final List<UploadPart> replaced = session.parts().stream()
+                .map(part -> Arrays.stream(parts)
+                        .filter(replacement -> replacement.partIndex() == part.partIndex())
+                        .findFirst()
+                        .orElse(part))
+                .toList();
+        return new UploadSession(session.id(), session.eventId(), session.status(), session.venue(),
+                session.createdAt(), session.updatedAt(), session.version(), session.cameras(), session.clips(),
+                replaced);
+    }
+
+    private static UploadSession withClips(final UploadSession session, final Function<UploadClip, UploadClip> change) {
+        return new UploadSession(session.id(), session.eventId(), session.status(), session.venue(),
+                session.createdAt(), session.updatedAt(), session.version(), session.cameras(),
+                session.clips().stream().map(change).toList(), session.parts());
     }
 }

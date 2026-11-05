@@ -60,6 +60,10 @@ public class UploadSessionRecordConverter {
         record.setPartIndex(clip.partIndex());
         record.setObjectKey(clip.objectKey());
         record.setStatus(clip.status().name());
+        record.setSizeBytes(clip.sizeBytes());
+        record.setStartMs(clip.startMs());
+        record.setDurationMs(clip.durationMs());
+        record.setUploadedAt(toOffsetDateTime(clip.uploadedAt()));
         return record;
     }
 
@@ -68,6 +72,9 @@ public class UploadSessionRecordConverter {
         record.setSessionId(sessionId);
         record.setPartIndex(part.partIndex());
         record.setStatus(part.status().name());
+        record.setStartMs(part.startMs());
+        record.setDurationMs(part.durationMs());
+        record.setPublishedAt(toOffsetDateTime(part.publishedAt()));
         return record;
     }
 
@@ -97,14 +104,20 @@ public class UploadSessionRecordConverter {
 
     private static UploadClip toDomain(final UploadClipRecord clip) {
         return new UploadClip(Camera.valueOf(clip.getCamera()), clip.getPartIndex(), clip.getObjectKey(),
-                ClipStatus.valueOf(clip.getStatus()));
+                ClipStatus.valueOf(clip.getStatus()), clip.getSizeBytes(), clip.getStartMs(), clip.getDurationMs(),
+                toInstant(clip.getUploadedAt()));
     }
 
     private static UploadPart toDomain(final UploadPartRecord part) {
-        return new UploadPart(part.getPartIndex(), PartStatus.valueOf(part.getStatus()));
+        return new UploadPart(part.getPartIndex(), PartStatus.valueOf(part.getStatus()), part.getStartMs(),
+                part.getDurationMs(), toInstant(part.getPublishedAt()));
     }
 
     private static OffsetDateTime toOffsetDateTime(final Instant instant) {
-        return instant.atOffset(ZoneOffset.UTC);
+        return instant == null ? null : instant.atOffset(ZoneOffset.UTC);
+    }
+
+    private static Instant toInstant(final OffsetDateTime time) {
+        return time == null ? null : time.toInstant();
     }
 }

@@ -121,10 +121,70 @@ public record UploadSession(UUID id,
                 .count();
     }
 
-    private void requireFitsTheCameraSet(final Camera next) {
-        final Set<Camera> registered = cameras.stream()
+    /**
+     * @return how many parts have been published for extraction
+     */
+    public int partsPublished() {
+        return (int) parts.stream().filter(UploadPart::published).count();
+    }
+
+    /**
+     * @return the cameras each part needs a clip from, in {@link Camera} order: {@code SINGLE} when it is
+     *         registered, otherwise {@code LEFT} and {@code RIGHT}, even while only one of them has registered
+     */
+    public Set<Camera> expectedCameras() {
+        return registeredCameras().contains(Camera.SINGLE)
+                ? EnumSet.of(Camera.SINGLE)
+                : EnumSet.of(Camera.LEFT, Camera.RIGHT);
+    }
+
+    /**
+     * @param partIndex the part, 0-based
+     * @return {@link PartState#COMPLETE} or {@link PartState#NO_OVERLAP} once the part is done; while it waits, the
+     *         first expected camera whose clip is not uploaded ({@code WAITING_LEFT} before {@code WAITING_RIGHT}),
+     *         or {@link PartState#WAITING} for a single camera
+     * @throws IllegalArgumentException when the session has no such part
+     * @throws IllegalStateException    when the part waits although every expected clip is uploaded
+     */
+    public PartState partState(final int partIndex) {
+        final UploadPart part = parts.stream()
+                .filter(candidate -> candidate.partIndex() == partIndex)
+                .findFirst()
+                .orElseThrow(() -> new IllegalArgumentException("Session '" + id + "' has no part " + partIndex));
+        return switch (part.status()) {
+            case COMPLETE -> PartState.COMPLETE;
+            case NO_OVERLAP -> PartState.NO_OVERLAP;
+            case WAITING -> waitingFor(partIndex);
+        };
+    }
+
+    private PartState waitingFor(final int partIndex) {
+        final Camera missing = expectedCameras().stream()
+                .filter(camera -> !isUploaded(camera, partIndex))
+                .findFirst()
+                .orElseThrow(() -> new IllegalStateException("Part " + partIndex + " of session '" + id
+                        + "' is WAITING although every expected clip is uploaded"));
+        return switch (missing) {
+            case SINGLE -> PartState.WAITING;
+            case LEFT -> PartState.WAITING_LEFT;
+            case RIGHT -> PartState.WAITING_RIGHT;
+        };
+    }
+
+    private boolean isUploaded(final Camera camera, final int partIndex) {
+        return clips.stream().anyMatch(clip -> clip.camera() == camera
+                && clip.partIndex() == partIndex
+                && clip.status() == ClipStatus.UPLOADED);
+    }
+
+    private Set<Camera> registeredCameras() {
+        return cameras.stream()
                 .map(UploadCamera::camera)
                 .collect(Collectors.toCollection(() -> EnumSet.noneOf(Camera.class)));
+    }
+
+    private void requireFitsTheCameraSet(final Camera next) {
+        final Set<Camera> registered = registeredCameras();
         if (registered.contains(next)) {
             throw new CameraSetConflictException(id, "camera " + next + " is already registered");
         }
@@ -157,14 +217,14 @@ public record UploadSession(UUID id,
                                                  final CameraRegistration registration) {
         final Camera camera = registration.camera();
         return IntStream.range(0, registration.partCount())
-                .mapToObj(index -> new UploadClip(camera, index, ObjectKeys.clipKey(eventId, sessionId, camera, index),
-                        ClipStatus.PENDING))
+                .mapToObj(index -> UploadClip.pending(camera, index,
+                        ObjectKeys.clipKey(eventId, sessionId, camera, index)))
                 .toList();
     }
 
     private static List<UploadPart> waitingParts(final int partCount) {
         return IntStream.range(0, partCount)
-                .mapToObj(index -> new UploadPart(index, PartStatus.WAITING))
+                .mapToObj(UploadPart::waiting)
                 .toList();
     }
 
