@@ -2,9 +2,17 @@ package org.cavalodetroia.ctr.api.error;
 
 import org.cavalodetroia.ctr.api.filter.CorrelationIdFilter;
 import org.cavalodetroia.ctr.domain.exception.CameraSetConflictException;
+import org.cavalodetroia.ctr.domain.exception.ClipAlreadyCompletedException;
+import org.cavalodetroia.ctr.domain.exception.EtagMismatchException;
 import org.cavalodetroia.ctr.domain.exception.EventNotFoundException;
 import org.cavalodetroia.ctr.domain.exception.IdempotencyKeyReusedException;
+import org.cavalodetroia.ctr.domain.exception.ObjectNotFoundException;
 import org.cavalodetroia.ctr.domain.exception.PartCountMismatchException;
+import org.cavalodetroia.ctr.domain.exception.PartIndexOutOfRangeException;
+import org.cavalodetroia.ctr.domain.exception.SessionNotFoundException;
+import org.cavalodetroia.ctr.domain.exception.SizeMismatchException;
+import org.cavalodetroia.ctr.domain.exception.StorageUnavailableException;
+import org.cavalodetroia.ctr.domain.exception.UnknownCameraException;
 import org.cavalodetroia.ctr.domain.exception.VenueSpecException;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -46,6 +54,10 @@ import java.util.stream.Collectors;
 public class ApiExceptionHandler extends ResponseEntityExceptionHandler {
 
     static final String TYPE_BASE = "https://cavalodetroia.dev/problems/";
+    /**
+     * How long a client waits before confirming again after {@code STORAGE_UNAVAILABLE}: about one S3 call budget.
+     */
+    public static final String RETRY_AFTER_SECONDS = "5";
 
     private static final Logger LOGGER = LoggerFactory.getLogger(ApiExceptionHandler.class);
 
@@ -67,6 +79,51 @@ public class ApiExceptionHandler extends ResponseEntityExceptionHandler {
     @ExceptionHandler(IdempotencyKeyReusedException.class)
     ResponseEntity<Object> idempotencyKeyReused(final IdempotencyKeyReusedException e) {
         return respond(problem(HttpStatus.UNPROCESSABLE_CONTENT, "IDEMPOTENCY_KEY_REUSED", e.getMessage()));
+    }
+
+    @ExceptionHandler(SessionNotFoundException.class)
+    ResponseEntity<Object> sessionNotFound(final SessionNotFoundException e) {
+        return respond(problem(HttpStatus.NOT_FOUND, "SESSION_NOT_FOUND", e.getMessage()));
+    }
+
+    @ExceptionHandler(UnknownCameraException.class)
+    ResponseEntity<Object> unknownCamera(final UnknownCameraException e) {
+        return respond(validationFailed(List.of(new InvalidField(e.field(), e.reason()))));
+    }
+
+    @ExceptionHandler(PartIndexOutOfRangeException.class)
+    ResponseEntity<Object> partIndexOutOfRange(final PartIndexOutOfRangeException e) {
+        return respond(validationFailed(List.of(new InvalidField(e.field(), e.reason()))));
+    }
+
+    @ExceptionHandler(ClipAlreadyCompletedException.class)
+    ResponseEntity<Object> clipAlreadyCompleted(final ClipAlreadyCompletedException e) {
+        return respond(problem(HttpStatus.CONFLICT, "CLIP_ALREADY_COMPLETED", e.getMessage()));
+    }
+
+    @ExceptionHandler(ObjectNotFoundException.class)
+    ResponseEntity<Object> objectNotFound(final ObjectNotFoundException e) {
+        return respond(problem(HttpStatus.UNPROCESSABLE_CONTENT, "OBJECT_NOT_FOUND", e.getMessage()));
+    }
+
+    @ExceptionHandler(SizeMismatchException.class)
+    ResponseEntity<Object> sizeMismatch(final SizeMismatchException e) {
+        return respond(problem(HttpStatus.UNPROCESSABLE_CONTENT, "SIZE_MISMATCH", e.getMessage()));
+    }
+
+    @ExceptionHandler(EtagMismatchException.class)
+    ResponseEntity<Object> etagMismatch(final EtagMismatchException e) {
+        return respond(problem(HttpStatus.UNPROCESSABLE_CONTENT, "ETAG_MISMATCH", e.getMessage()));
+    }
+
+    // The cause (endpoint, SDK message) is logged by the storage adapter, never sent to the client
+    @ExceptionHandler(StorageUnavailableException.class)
+    ResponseEntity<Object> storageUnavailable(final StorageUnavailableException e) {
+        final ProblemDetail problem = problem(HttpStatus.SERVICE_UNAVAILABLE, "STORAGE_UNAVAILABLE",
+                "The storage could not be reached. Nothing was recorded; confirm the clip again later.");
+        return ResponseEntity.status(problem.getStatus())
+                .header(HttpHeaders.RETRY_AFTER, RETRY_AFTER_SECONDS)
+                .body(problem);
     }
 
     @ExceptionHandler(VenueSpecException.class)

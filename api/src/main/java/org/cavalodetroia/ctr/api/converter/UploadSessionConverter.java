@@ -1,11 +1,17 @@
 package org.cavalodetroia.ctr.api.converter;
 
 import org.cavalodetroia.ctr.api.domain.upload.CameraSummaryResponse;
+import org.cavalodetroia.ctr.api.domain.upload.CompleteClipRequest;
+import org.cavalodetroia.ctr.api.domain.upload.CompleteClipResponse;
+import org.cavalodetroia.ctr.api.domain.upload.PartSummary;
 import org.cavalodetroia.ctr.api.domain.upload.RegisterCameraRequest;
 import org.cavalodetroia.ctr.api.domain.upload.RegisterCameraResponse;
+import org.cavalodetroia.ctr.api.domain.upload.SessionSummary;
 import org.cavalodetroia.ctr.api.domain.venue.VenueRequest;
 import org.cavalodetroia.ctr.domain.exception.VenueSpecException;
 import org.cavalodetroia.ctr.domain.model.upload.CameraRegistration;
+import org.cavalodetroia.ctr.domain.model.upload.ClipCompletion;
+import org.cavalodetroia.ctr.domain.model.upload.ClipConfirmation;
 import org.cavalodetroia.ctr.domain.model.upload.ObjectKeys;
 import org.cavalodetroia.ctr.domain.model.upload.RegistrationResult;
 import org.cavalodetroia.ctr.domain.model.upload.UploadCamera;
@@ -42,6 +48,25 @@ public class UploadSessionConverter {
                 camera.prefix(),
                 ObjectKeys.CLIP_KEY_TEMPLATE,
                 cameras(session));
+    }
+
+    public ClipConfirmation toConfirmation(final CompleteClipRequest request) {
+        return new ClipConfirmation(request.sizeBytes(), request.etag(), request.startMs(), request.durationMs());
+    }
+
+    /**
+     * Built from the session as stored after the confirmation, never from the request, so a repeated confirmation
+     * gets the same body.
+     */
+    public CompleteClipResponse toResponse(final ClipCompletion completion) {
+        final UploadSession session = completion.after();
+        final int partIndex = completion.partIndex();
+        return new CompleteClipResponse(
+                completion.camera(),
+                partIndex,
+                completion.clip().status(),
+                new PartSummary(completion.partState(), session.part(partIndex).isPublished()),
+                new SessionSummary(session.status(), session.partsPublished(), session.partCount()));
     }
 
     private static List<CameraSummaryResponse> cameras(final UploadSession session) {
