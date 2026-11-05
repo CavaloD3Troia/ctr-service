@@ -3,8 +3,9 @@
 Control Tower, the only backend the UI talks to. Spring Boot 4.1, Java 25, Maven, Postgres (jOOQ + Liquibase),
 Kafka (protobuf), hexagonal. The platform design is ADR-0001 in `CavaloD3Troia/CavaloDeTroiaDocumentation`.
 
-**Start small.** The code is a deliberately thin slice: `POST /api/v1/events` → Postgres → `ctr.event.created.v1`
-→ our own listener logs it. Build only what the current feature needs. When a feature does need one of the
+**Start small.** The code is the first endpoint of the upload flow and nothing more:
+`POST /api/v1/events/{eventId}/upload-session/cameras` → Postgres. Nothing is published to Kafka yet. Build only what
+the current feature needs. When a feature does need one of the
 patterns below (retries, DLQ, outbox, correlation ids…), implement it **the way this file describes**, not ad hoc.
 The [Not built yet](#not-built-yet) section lists what is missing on purpose.
 
@@ -33,19 +34,37 @@ The contracts jar must be in `~/.m2`: a GitHub Packages `read:packages` token, o
 | `component-tests` | Cucumber, black box | Reach into internals beyond what a scenario must observe |
 
 - `ArchitectureTest` enforces this. Never weaken a rule to make code compile; move the code.
-- Ports are named for the capability (`EventPublisher`), adapters for the technology (`EventCreatedPublisher`,
-  `JooqEventRepository`).
+- Ports are named for the capability (`UploadSessionRepository`, `IdempotencyStore`), adapters for the technology
+  (`JooqUploadSessionRepository`, `JooqIdempotencyStore`).
 - Domain services get no annotations; add a `@Bean` per service in `application/wiring/<Feature>Wiring`.
-- Packages: `org.cavalodetroia.ctr.<module>.<feature>`.
+- Packages: kind first, concept second, `org.cavalodetroia.ctr.<module>.<kind>[.<concept>]`. The first level says what
+  kind of class lives there; inside the records folder the second level names the concept.
+  - `api`: `controller`, `domain/<concept>` (request and response records, e.g. `domain/upload/RegisterCameraRequest`),
+    `converter`, `error`, `filter`, `idempotency`.
+  - `domain`: `model/<concept>` (entities, value records, enums and their rules, e.g. `model/upload/UploadSession`;
+    `model` so the path does not read `domain.domain`), `service`, `port/in`, `port/out`, `exception`, `common`.
+  - `infra`: `repository` (jOOQ adapters), `converter`, `kafka/publisher`, `kafka/listener`, `kafka/serialization`,
+    `kafka/config`, `storage`, `outbox`, `domain/<concept>` for infra-only records.
+  - `application`: `config` (properties records), `wiring`, `health`, `scheduling`.
+  - `component-tests`: `features`, `steps`, `support`.
+  - `ArchitectureTest` checks that classes in `..controller..` end in `Controller` and in `..converter..` in
+    `Converter`.
 
 ## Conventions
 
 - Constructor injection only, `final` fields, `record` for DTOs, domain values and properties.
 - A converter class at every boundary (API ↔ domain, domain ↔ jOOQ record, domain ↔ proto). Never map inline in
-  a controller or listener, and never reuse one layer's type in another (no jOOQ record or proto in the API).
-- Logs are structured: `LOGGER.info("operation=create, message=Event created eventId='{}'", id)`.
-- Configuration: one `@ConfigurationProperties` record per concern, bound by prefix. The lone
-  `@Value("${ctr.kafka.topic}")` is the exception; replace it with a record as soon as a second Kafka setting appears.
+  a controller or listener, and never reuse one layer's type in another (no jOOQ record or proto in the API). The
+  domain's enums of the ubiquitous language (`Camera`, `VenueFormat`) are values, not layer types: request and
+  response records use them, so the allowed values are defined once.
+- Logs are structured: `LOGGER.info("operation=create, message=Event created eventId='{}'", id)`. They go out as
+  JSON lines (Spring Boot's `logstash` format, plus `service`), so every MDC entry becomes a field.
+- MDC: `CorrelationIdFilter` puts `correlation_id` for the whole request and clears the MDC at the end. Add
+  `session_id`, `camera` and `part_index` as soon as the request knows them (the controller knows the camera, the
+  repository the session). The domain can't use SLF4J: it logs through the JDK's `System.Logger`, which Spring Boot
+  bridges to the same logs and MDC.
+- Configuration: one `@ConfigurationProperties` record per concern in `application/config`, bound by prefix
+  (`StorageProperties` for `ctr.storage`). No `@Value`.
 
 ## REST
 
@@ -54,10 +73,17 @@ The contracts jar must be in `~/.m2`: a GitHub Packages `read:packages` token, o
 - A controller only validates, converts, delegates to a `port/in` interface, converts back and picks the status.
 - Structural validation (Bean Validation on the request record) at the edge → 400. Semantic rules that need data
   live in the domain.
-- Errors are RFC 9457 ProblemDetail. Today that is Spring's built-in (`spring.mvc.problemdetails.enabled`). When
-  the first domain exception appears, add **one** `@RestControllerAdvice` extending `ResponseEntityExceptionHandler`
-  that maps each domain exception to its status and adds a stable `code` property. A 500 carries only the
-  correlation id, never internals.
+- Errors are RFC 9457 `application/problem+json`, all from **one** `@RestControllerAdvice`,
+  `api/error/ApiExceptionHandler`. A new domain exception gets a handler there: its status, a stable `code`
+  (`EVENT_NOT_FOUND`) and the `type` `https://cavalodetroia.dev/problems/<code-in-kebab-case>`. Validation failures
+  are `400 VALIDATION_FAILED` with `errors: [{field, message}]`. A 500 carries only the correlation id, never internals.
+- Every response has `X-Correlation-Id` (`api/filter/CorrelationIdFilter`): the caller's when it is a safe token,
+  otherwise `CTR-<uuidv7>`.
+- A `POST` that creates something takes an optional `Idempotency-Key` header and goes through
+  `api/idempotency/IdempotentRequests`: same key and body within 24 hours replays the stored response; same key and
+  another body is `422 IDEMPOTENCY_KEY_REUSED`.
+- Every operation carries springdoc annotations (`@Operation`, an `@ApiResponse` per status with its codes, the
+  headers); request and response records get `@Schema` for fields that need explaining. Served at `/v3/api-docs`.
 - For a list body, put `@Valid` inside the generic: `List<@Valid Item>`.
 - Batch endpoints are best effort: per-element `status`, `200` when all succeed, `207` when mixed, `422` when all
   fail.
@@ -87,7 +113,7 @@ of the entity whose ordering matters (`event_id`).
   of blocking the partition. The deserializer throws a `SerializationException` that names the topic.
 - The listener only does three things: (1) correlation id into MDC (header → payload → generated `ctr-service-<uuid>`,
   and `MDC.clear()` in `finally`); (2) a cheap validation; (3) convert and call a domain `port/in`. No business
-  logic. Today's `EventCreatedListener` only logs; anything more must go through a domain port.
+  logic. There is no listener yet; the first one follows these three steps.
 - Today `@KafkaListener` and `spring.kafka.*` are enough. Once a listener needs a filter, its own concurrency, or a
   custom error handler, follow the blueprint instead:
   - a plain class implementing `MessageListener`;
@@ -119,7 +145,8 @@ of the entity whose ordering matters (`event_id`).
 - The generator runs the SQL on H2, which reads `TEXT` as a CLOB and can't index it: a `TEXT` column in a key is
   created as `VARCHAR` and turned into `TEXT` in an ignored `ALTER` (see `0002-create-upload-tables.sql`).
 - The port speaks domain types only. The adapter owns the converter and **translates exceptions**: jOOQ/JDBC
-  exceptions become domain exceptions (for example, a duplicate key becomes `EventAlreadyExistsException`).
+  exceptions become domain exceptions (for example, a violation of `upload_session_one_open_per_event` becomes
+  `OpenSessionAlreadyExistsException`).
 - Once a converter goes both ways, test the round trip (`toDomain(toRecord(x)).equals(x)`).
 - **Retries.** Retry only transient failures (connection loss, timeouts), with resilience4j `@Retry`:
   - Limit it to those exceptions with a retry predicate.
@@ -140,7 +167,8 @@ of the entity whose ordering matters (`event_id`).
 - Names `should_<expected>_when_<condition>`, AssertJ only, Mockito for ports only. Fixtures are ObjectMother
   builders with sensible defaults.
 - Every serializer has a `null` (tombstone) test; every two-way converter has a round-trip test.
-- A component scenario asserts **both** sides: the HTTP response and what landed in Postgres or Kafka.
+- A component scenario asserts **both** sides: the HTTP response and what landed in Postgres or Kafka. Log lines
+  and their MDC are read through `support/LogCapture`.
 - Component-test flakes to avoid:
   - Await asynchronous effects with Awaitility; never `sleep`.
   - Before a step that depends on consumed state, wait until the service has consumed the message.
@@ -166,13 +194,11 @@ Left out of the first slice on purpose. Each item gets built, following this fil
 - the transactional outbox (publishing) and the inbox with deduplication (consuming)
 - consumer retries with backoff, and a DLQ
 - persistence retries (resilience4j)
-- correlation ids: an HTTP filter, the Kafka header, and the MDC log pattern
-- the `@RestControllerAdvice` with stable error `code`s
-- typed properties records
+- the correlation id as a Kafka header (the HTTP filter and the MDC are built)
 - the explicit `MessageListener` wiring
 - metrics: `@Timed` on controllers, listeners and repositories, plus `KafkaClientMetrics`
-- OpenTelemetry tracing and JSON logs
-- auth, and `Idempotency-Key` on `POST`
+- OpenTelemetry tracing
+- auth
+- purging `idempotency_key` rows older than 24 hours (they are ignored, not deleted)
 - the integration-test tier
-- OpenAPI docs
 - CI (it needs package access to fetch the contracts)

@@ -1,5 +1,6 @@
 package org.cavalodetroia.ctr.api.domain.venue;
 
+import io.swagger.v3.oas.annotations.media.Schema;
 import jakarta.validation.constraints.Positive;
 import org.cavalodetroia.ctr.domain.model.venue.VenueFormat;
 
@@ -12,5 +13,16 @@ import org.cavalodetroia.ctr.domain.model.venue.VenueFormat;
  * @param lengthM the measured length in metres
  * @param widthM  the measured width in metres
  */
-public record VenueRequest(VenueFormat format, @Positive Double lengthM, @Positive Double widthM) {
+public record VenueRequest(
+        @Schema(description = "The kind of pitch. Standard dimensions: FUTSAL_5V5 40 x 20 m, FOOTBALL_7V7 65 x 45 m, "
+                + "FOOTBALL_11V11 105 x 68 m")
+        VenueFormat format,
+
+        @Schema(description = "Measured length in metres; give it with widthM, or leave both out for the standard",
+                example = "105")
+        @Positive Double lengthM,
+
+        @Schema(description = "Measured width in metres; give it with lengthM, or leave both out for the standard",
+                example = "68")
+        @Positive Double widthM) {
 }

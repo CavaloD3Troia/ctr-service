@@ -13,9 +13,6 @@ spring:
     bootstrap-servers: ${KAFKA_BOOTSTRAP_SERVERS:localhost:9092}
     producer:
       value-serializer: org.cavalodetroia.ctr.infra.kafka.serialization.ProtobufSerializer
-  mvc:
-    problemdetails:
-      enabled: true
 
 ctr:
   storage:
