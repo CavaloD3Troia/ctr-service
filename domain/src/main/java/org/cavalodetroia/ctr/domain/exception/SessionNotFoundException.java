@@ -3,7 +3,7 @@ package org.cavalodetroia.ctr.domain.exception;
 import java.util.UUID;
 
 /**
- * The upload session is not known to ctr-service.
+ * No upload session has this id.
  */
 public class SessionNotFoundException extends RuntimeException {
 

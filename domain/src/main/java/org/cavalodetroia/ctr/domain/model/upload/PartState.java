@@ -1,21 +1,20 @@
 package org.cavalodetroia.ctr.domain.model.upload;
 
 /**
- * Where one part stands as the cameras see it: which camera it still waits for, or how it closed.
+ * Where one part stands as the app shows it: which camera it waits for, or how it ended.
  */
 public enum PartState {
     /**
-     * No camera has uploaded its clip of the part yet, or the single camera has not.
-     */
-    WAITING,
-    /**
-     * RIGHT has uploaded its clip of the part; LEFT has not.
+     * Two cameras: the LEFT clip is missing, or LEFT has not registered yet (when both are missing, LEFT is named
+     * first).
      */
     WAITING_LEFT,
-    /**
-     * LEFT has uploaded its clip of the part; RIGHT has not, or has not registered yet.
-     */
+    /** Two cameras: the RIGHT clip is missing, or RIGHT has not registered yet. */
     WAITING_RIGHT,
+    /** A single camera: its clip is missing. */
+    WAITING,
+    /** Every expected clip is in and they overlap. */
     COMPLETE,
+    /** Every expected clip is in, but they don't overlap, so the part has no window. */
     NO_OVERLAP
 }

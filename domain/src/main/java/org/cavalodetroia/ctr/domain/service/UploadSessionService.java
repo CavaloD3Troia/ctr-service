@@ -20,6 +20,7 @@ import org.cavalodetroia.ctr.domain.model.upload.UploadClip;
 import org.cavalodetroia.ctr.domain.model.upload.UploadSession;
 import org.cavalodetroia.ctr.domain.model.upload.Window;
 import org.cavalodetroia.ctr.domain.port.in.CompleteClip;
+import org.cavalodetroia.ctr.domain.port.in.GetUploadSession;
 import org.cavalodetroia.ctr.domain.port.in.RegisterCamera;
 import org.cavalodetroia.ctr.domain.port.out.ClipStorage;
 import org.cavalodetroia.ctr.domain.port.out.EventRepository;
@@ -34,11 +35,11 @@ import java.util.UUID;
 import java.util.stream.Collectors;
 
 /**
- * Registers cameras on upload sessions and confirms the clips they upload. Logs through {@link System.Logger}, the
- * JDK's logging facade, so the domain keeps depending on nothing but the JDK; Spring Boot bridges it to the
- * application's logs.
+ * Registers cameras on upload sessions, reads them back and confirms the clips the cameras upload. Logs through
+ * {@link System.Logger}, the JDK's logging facade, so the domain keeps depending on nothing but the JDK; Spring Boot
+ * bridges it to the application's logs.
  */
-public class UploadSessionService implements RegisterCamera, CompleteClip {
+public class UploadSessionService implements RegisterCamera, GetUploadSession, CompleteClip {
 
     private static final System.Logger LOGGER = System.getLogger(UploadSessionService.class.getName());
     // A session takes at most two cameras, so a registration loses at most twice: to the camera that opened the
@@ -77,6 +78,11 @@ public class UploadSessionService implements RegisterCamera, CompleteClip {
         return result;
     }
 
+    @Override
+    public UploadSession get(final UUID sessionId) {
+        return sessions.findById(sessionId).orElseThrow(() -> new SessionNotFoundException(sessionId));
+    }
+
     /**
      * Everything that can be decided from the stored session (camera, part index, a clip already uploaded) is decided
      * before the bucket is asked, and the bucket is asked before anything is written, outside any transaction. The
@@ -88,8 +94,7 @@ public class UploadSessionService implements RegisterCamera, CompleteClip {
                                    final Camera camera,
                                    final int partIndex,
                                    final ClipConfirmation confirmation) {
-        final UploadSession session = sessions.findById(sessionId)
-                .orElseThrow(() -> new SessionNotFoundException(sessionId));
+        final UploadSession session = get(sessionId);
         final UploadClip clip = session.clip(camera, partIndex);
         // An uploaded clip needs no check of the bucket: the same confirmation is answered from what is stored, and
         // another one is a conflict

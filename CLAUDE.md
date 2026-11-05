@@ -3,10 +3,11 @@
 Control Tower, the only backend the UI talks to. Spring Boot 4.1, Java 25, Maven, Postgres (jOOQ + Liquibase),
 Kafka (protobuf), hexagonal. The platform design is ADR-0001 in `CavaloD3Troia/CavaloDeTroiaDocumentation`.
 
-**Start small.** The code is the first two endpoints of the upload flow and nothing more:
-`POST /api/v1/events/{eventId}/upload-session/cameras` → Postgres, and
-`POST /api/v1/upload-sessions/{sessionId}/cameras/{camera}/parts/{partIndex}/complete` → an S3 `HEAD`, then Postgres.
-Nothing is published to Kafka yet. Build only what
+**Start small.** The code is the first three endpoints of the upload flow and nothing more:
+`POST /api/v1/events/{eventId}/upload-session/cameras` (a camera registers) → Postgres,
+`GET /api/v1/upload-sessions/{sessionId}` (the app reads where the upload stands) → Postgres, and
+`POST /api/v1/upload-sessions/{sessionId}/cameras/{camera}/parts/{partIndex}/complete` (a camera confirms a clip) → an
+S3 `HEAD`, then Postgres. Nothing is published to Kafka yet. Build only what
 the current feature needs. When a feature does need one of the
 patterns below (retries, DLQ, outbox, correlation ids…), implement it **the way this file describes**, not ad hoc.
 The [Not built yet](#not-built-yet) section lists what is missing on purpose.

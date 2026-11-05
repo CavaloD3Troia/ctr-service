@@ -66,6 +66,11 @@ public class ApiExceptionHandler extends ResponseEntityExceptionHandler {
         return respond(problem(HttpStatus.NOT_FOUND, "EVENT_NOT_FOUND", e.getMessage()));
     }
 
+    @ExceptionHandler(SessionNotFoundException.class)
+    ResponseEntity<Object> sessionNotFound(final SessionNotFoundException e) {
+        return respond(problem(HttpStatus.NOT_FOUND, "SESSION_NOT_FOUND", e.getMessage()));
+    }
+
     @ExceptionHandler(CameraSetConflictException.class)
     ResponseEntity<Object> cameraSetConflict(final CameraSetConflictException e) {
         return respond(problem(HttpStatus.CONFLICT, "CAMERA_SET_CONFLICT", e.getMessage()));
@@ -79,11 +84,6 @@ public class ApiExceptionHandler extends ResponseEntityExceptionHandler {
     @ExceptionHandler(IdempotencyKeyReusedException.class)
     ResponseEntity<Object> idempotencyKeyReused(final IdempotencyKeyReusedException e) {
         return respond(problem(HttpStatus.UNPROCESSABLE_CONTENT, "IDEMPOTENCY_KEY_REUSED", e.getMessage()));
-    }
-
-    @ExceptionHandler(SessionNotFoundException.class)
-    ResponseEntity<Object> sessionNotFound(final SessionNotFoundException e) {
-        return respond(problem(HttpStatus.NOT_FOUND, "SESSION_NOT_FOUND", e.getMessage()));
     }
 
     @ExceptionHandler(UnknownCameraException.class)

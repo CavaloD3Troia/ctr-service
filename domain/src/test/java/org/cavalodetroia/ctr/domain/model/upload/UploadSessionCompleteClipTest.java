@@ -10,7 +10,6 @@ import org.junit.jupiter.params.provider.ValueSource;
 
 import java.time.Instant;
 import java.util.List;
-import java.util.Set;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -169,7 +168,7 @@ class UploadSessionCompleteClipTest {
         final ClipCompletion completion = session.completeClip(Camera.RIGHT, 2, confirmation(), UPLOADED_AT);
 
         assertThat(completion.part()).isInstanceOf(PartTransition.Complete.class);
-        assertThat(completion.after().partState(0)).isEqualTo(PartState.WAITING);
+        assertThat(completion.after().partState(0)).isEqualTo(PartState.WAITING_LEFT);
         assertThat(completion.after().partState(1)).isEqualTo(PartState.WAITING_LEFT);
         assertThat(completion.after().partState(2)).isEqualTo(PartState.COMPLETE);
     }
@@ -231,21 +230,6 @@ class UploadSessionCompleteClipTest {
                     assertThat(e.field()).isEqualTo("partIndex");
                     assertThat(e.reason()).isEqualTo("must be between 0 and 2");
                 });
-        assertThatThrownBy(() -> session.partState(partIndex)).isInstanceOf(PartIndexOutOfRangeException.class);
-    }
-
-    @Test
-    void should_waitForEveryCamera_when_noClipOfThePartIsUploaded() {
-        assertThat(leftAndRight().partState(0)).isEqualTo(PartState.WAITING);
-        assertThat(openedBy(Camera.SINGLE).partState(0)).isEqualTo(PartState.WAITING);
-    }
-
-    @ParameterizedTest(name = "registered {0}")
-    @CsvSource(delimiter = '|', value = {"SINGLE | SINGLE", "LEFT | LEFT,RIGHT", "RIGHT | LEFT,RIGHT"})
-    void should_expectTheCamerasOfTheSessionsCameraSet_when_askedForTheExpectedCameras(final Camera first,
-                                                                                      final String expected) {
-        assertThat(openedBy(first).expectedCameras())
-                .isEqualTo(Set.copyOf(List.of(expected.split(",")).stream().map(Camera::valueOf).toList()));
     }
 
     @Test
@@ -259,7 +243,7 @@ class UploadSessionCompleteClipTest {
 
         assertThat(withOnePublished.partsPublished()).isEqualTo(1);
         assertThat(withOnePublished.partCount()).isEqualTo(3);
-        assertThat(published.isPublished()).isTrue();
+        assertThat(published.published()).isTrue();
         assertThat(session.partsPublished()).isZero();
     }
 }

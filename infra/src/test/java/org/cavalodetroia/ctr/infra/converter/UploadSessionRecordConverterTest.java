@@ -3,6 +3,7 @@ package org.cavalodetroia.ctr.infra.converter;
 import org.cavalodetroia.ctr.domain.model.upload.Camera;
 import org.cavalodetroia.ctr.domain.model.upload.CameraRegistration;
 import org.cavalodetroia.ctr.domain.model.upload.ClipConfirmation;
+import org.cavalodetroia.ctr.domain.model.upload.ClipStatus;
 import org.cavalodetroia.ctr.domain.model.upload.PartStatus;
 import org.cavalodetroia.ctr.domain.model.upload.UploadClip;
 import org.cavalodetroia.ctr.domain.model.upload.UploadPart;
@@ -16,6 +17,7 @@ import org.junit.jupiter.api.Test;
 import java.time.Instant;
 import java.time.OffsetDateTime;
 import java.time.ZoneOffset;
+import java.util.List;
 import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -129,6 +131,34 @@ class UploadSessionRecordConverterTest {
                 session.parts().stream().map(part -> converter.toRecord(SESSION_ID, part)).toList());
 
         assertThat(back).isEqualTo(session);
+    }
+
+    // AC-2 (TH-143): what a camera reported about its clip, and a part's window and publication, come back as stored
+    @Test
+    void should_giveBackTheSameClipsAndParts_when_roundTrippingUploadedClipsAndFinishedParts() {
+        final UploadClip uploaded = new UploadClip(Camera.RIGHT, 1, "events/e/sessions/s/RIGHT/1.mp4",
+                ClipStatus.UPLOADED, new ClipConfirmation(1_052_000_000L, "9b2cf535f27731c974343645a3985328",
+                598_000L, 300_000L), Instant.parse("2026-11-04T18:03:40Z"));
+        final UploadPart published = new UploadPart(1, PartStatus.COMPLETE, new Window(600_000L, 298_000L),
+                Instant.parse("2026-11-04T18:10:00Z"));
+        final UploadPart noOverlap = new UploadPart(2, PartStatus.NO_OVERLAP, new Window(1_202_000L, -2_000L), null);
+        final UploadSession left = leftThenRight(new RequestedVenue("FOOTBALL_11V11", null, null));
+        final UploadSession session = new UploadSession(SESSION_ID, EVENT_ID, left.status(), left.venue(),
+                left.createdAt(), left.updatedAt(), left.version(), left.cameras(),
+                List.of(uploaded, UploadClip.pending(Camera.LEFT, 1, "events/e/sessions/s/LEFT/1.mp4")),
+                List.of(UploadPart.waiting(0), published, noOverlap));
+
+        final UploadSession back = converter.toDomain(
+                converter.toRecord(session),
+                session.cameras().stream().map(camera -> converter.toRecord(SESSION_ID, camera)).toList(),
+                session.clips().stream().map(clip -> converter.toRecord(SESSION_ID, clip)).toList(),
+                session.parts().stream().map(part -> converter.toRecord(SESSION_ID, part)).toList());
+
+        assertThat(back).isEqualTo(session);
+        assertThat(converter.toRecord(SESSION_ID, uploaded).getUploadedAt())
+                .isEqualTo(OffsetDateTime.of(2026, 11, 4, 18, 3, 40, 0, ZoneOffset.UTC));
+        assertThat(converter.toRecord(SESSION_ID, published).getPublishedAt())
+                .isEqualTo(OffsetDateTime.of(2026, 11, 4, 18, 10, 0, 0, ZoneOffset.UTC));
     }
 
     private static UploadSession leftThenRight(final RequestedVenue venue) {

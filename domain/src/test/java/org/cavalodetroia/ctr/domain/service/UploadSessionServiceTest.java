@@ -3,6 +3,7 @@ package org.cavalodetroia.ctr.domain.service;
 import org.cavalodetroia.ctr.domain.exception.CameraSetConflictException;
 import org.cavalodetroia.ctr.domain.exception.EventNotFoundException;
 import org.cavalodetroia.ctr.domain.exception.OpenSessionAlreadyExistsException;
+import org.cavalodetroia.ctr.domain.exception.SessionNotFoundException;
 import org.cavalodetroia.ctr.domain.exception.UploadSessionChangedException;
 import org.cavalodetroia.ctr.domain.model.upload.Camera;
 import org.cavalodetroia.ctr.domain.model.upload.RegistrationResult;
@@ -26,6 +27,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.cavalodetroia.ctr.domain.model.upload.CameraRegistrations.BUCKET;
 import static org.cavalodetroia.ctr.domain.model.upload.CameraRegistrations.EVENT_ID;
 import static org.cavalodetroia.ctr.domain.model.upload.CameraRegistrations.JOINED_AT;
+import static org.cavalodetroia.ctr.domain.model.upload.CameraRegistrations.SESSION_ID;
 import static org.cavalodetroia.ctr.domain.model.upload.CameraRegistrations.first;
 import static org.cavalodetroia.ctr.domain.model.upload.CameraRegistrations.joining;
 import static org.cavalodetroia.ctr.domain.model.upload.CameraRegistrations.openedBy;
@@ -151,5 +153,26 @@ class UploadSessionServiceTest {
         assertThatThrownBy(() -> service().register(EVENT_ID, first(Camera.LEFT)))
                 .isInstanceOf(OpenSessionAlreadyExistsException.class);
         verify(sessions, times(3)).create(any());
+    }
+
+    // TH-143 AC-1: the session as stored, and nothing written
+    @Test
+    void should_giveTheStoredSession_when_readingAKnownSession() {
+        final UploadSession stored = openedBy(Camera.LEFT);
+        when(sessions.findById(SESSION_ID)).thenReturn(Optional.of(stored));
+
+        assertThat(service().get(SESSION_ID)).isEqualTo(stored);
+        verify(sessions, never()).create(any());
+        verify(sessions, never()).addCamera(any(), any());
+    }
+
+    // TH-143 AC-4
+    @Test
+    void should_throwSessionNotFound_when_readingAnUnknownSession() {
+        when(sessions.findById(SESSION_ID)).thenReturn(Optional.empty());
+
+        assertThatThrownBy(() -> service().get(SESSION_ID))
+                .isInstanceOf(SessionNotFoundException.class)
+                .hasMessageContaining(SESSION_ID.toString());
     }
 }

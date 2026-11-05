@@ -10,7 +10,7 @@ import java.util.Objects;
  * @param partIndex   the part, 0-based
  * @param status      whether every camera has uploaded its clip of it
  * @param window      the stretch of the recording the part covers once closed, {@code null} while waiting
- * @param publishedAt when the part was published, {@code null} until then
+ * @param publishedAt when the part was published for extraction, {@code null} until then
  */
 public record UploadPart(int partIndex, PartStatus status, Window window, Instant publishedAt) {
 
@@ -43,7 +43,15 @@ public record UploadPart(int partIndex, PartStatus status, Window window, Instan
         };
     }
 
-    public boolean isPublished() {
+    public boolean published() {
         return publishedAt != null;
+    }
+
+    /**
+     * @return whether {@link #window} is a window to cut: only for a {@link PartStatus#COMPLETE} part, since a
+     *         {@link PartStatus#NO_OVERLAP} one's is empty
+     */
+    public boolean hasWindow() {
+        return status == PartStatus.COMPLETE;
     }
 }

@@ -59,10 +59,7 @@ public class JooqUploadSessionRepository implements UploadSessionRepository {
                 .where(UPLOAD_SESSION.EVENT_ID.eq(eventId))
                 .and(UPLOAD_SESSION.STATUS.eq(SessionStatus.OPEN.name()))
                 .fetchOptional()
-                .map(session -> {
-                    MDC.put(MDC_SESSION_ID, session.getId().toString());
-                    return toDomain(dsl, session);
-                });
+                .map(session -> withCamerasClipsAndParts(dsl, session));
     }
 
     @Override
@@ -71,7 +68,7 @@ public class JooqUploadSessionRepository implements UploadSessionRepository {
         return dsl.selectFrom(UPLOAD_SESSION)
                 .where(UPLOAD_SESSION.ID.eq(sessionId))
                 .fetchOptional()
-                .map(session -> toDomain(dsl, session));
+                .map(session -> withCamerasClipsAndParts(dsl, session));
     }
 
     @Override
@@ -85,7 +82,7 @@ public class JooqUploadSessionRepository implements UploadSessionRepository {
                     .forUpdate()
                     .fetchOptional()
                     .orElseThrow(() -> new SessionNotFoundException(sessionId));
-            final ClipCompletion result = completion.apply(toDomain(db, locked));
+            final ClipCompletion result = completion.apply(withCamerasClipsAndParts(db, locked));
             if (!result.noop()) {
                 store(db, result);
             }
@@ -173,9 +170,17 @@ public class JooqUploadSessionRepository implements UploadSessionRepository {
         }
     }
 
-    private UploadSession toDomain(final DSLContext db, final UploadSessionRecord session) {
-        return converter.toDomain(session, cameras(db, session.getId()), clips(db, session.getId()),
-                parts(db, session.getId()));
+    /**
+     * One query per table, whatever the part count. Clips are read before parts: a clip and the part it completes
+     * are written in one transaction, so parts read after the clips are never older than them.
+     */
+    private UploadSession withCamerasClipsAndParts(final DSLContext db, final UploadSessionRecord session) {
+        final UUID sessionId = session.getId();
+        MDC.put(MDC_SESSION_ID, sessionId.toString());
+        final List<UploadCameraRecord> cameras = cameras(db, sessionId);
+        final List<UploadClipRecord> clips = clips(db, sessionId);
+        final List<UploadPartRecord> parts = parts(db, sessionId);
+        return converter.toDomain(session, cameras, clips, parts);
     }
 
     private static List<UploadCameraRecord> cameras(final DSLContext db, final UUID sessionId) {

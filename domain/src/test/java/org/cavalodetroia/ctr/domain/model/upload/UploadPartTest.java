@@ -35,9 +35,9 @@ class UploadPartTest {
 
     @Test
     void should_beUnpublished_until_ItHasAPublicationTime() {
-        assertThat(UploadPart.waiting(3).isPublished()).isFalse();
+        assertThat(UploadPart.waiting(3).published()).isFalse();
         assertThat(new UploadPart(3, PartStatus.COMPLETE, WINDOW, Instant.parse("2026-11-05T12:00:00Z"))
-                .isPublished()).isTrue();
+                .published()).isTrue();
     }
 
     @Test

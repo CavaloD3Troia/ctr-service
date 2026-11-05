@@ -188,32 +188,32 @@ public record UploadSession(UUID id,
     }
 
     /**
-     * The cameras a part waits for: {@code SINGLE} when it is registered, otherwise {@code LEFT} and {@code RIGHT},
-     * even while only one of them has registered. So a session with {@code LEFT} only closes no part, and does not
-     * complete, until {@code RIGHT} registers and uploads.
-     *
-     * @return {@code {SINGLE}} or {@code {LEFT, RIGHT}}
+     * @return the cameras each part needs a clip from, in {@link Camera} order: {@code SINGLE} when it is
+     *         registered, otherwise {@code LEFT} and {@code RIGHT}, even while only one of them has registered
      */
     public Set<Camera> expectedCameras() {
-        final Set<Camera> registered = registeredCameras();
-        return COMPLETE_CAMERA_SETS.stream()
-                .filter(complete -> complete.containsAll(registered))
-                .findFirst()
-                .map(EnumSet::copyOf)
-                .orElseThrow(() -> new IllegalStateException("Session '" + id + "' has the cameras " + registered));
+        return registeredCameras().contains(Camera.SINGLE)
+                ? EnumSet.of(Camera.SINGLE)
+                : EnumSet.of(Camera.LEFT, Camera.RIGHT);
     }
 
     /**
-     * @return where the part stands: closed ({@link PartState#COMPLETE} or {@link PartState#NO_OVERLAP}), waiting
-     *         for one camera ({@link PartState#WAITING_LEFT} or {@link PartState#WAITING_RIGHT}), or waiting for
-     *         every camera ({@link PartState#WAITING})
-     * @throws PartIndexOutOfRangeException when the part index is outside {@code 0 .. partCount - 1}
+     * @param partIndex the part, 0-based
+     * @return {@link PartState#COMPLETE} or {@link PartState#NO_OVERLAP} once the part is done; while it waits, the
+     *         first expected camera whose clip is not uploaded ({@code WAITING_LEFT} before {@code WAITING_RIGHT}),
+     *         or {@link PartState#WAITING} for a single camera
+     * @throws IllegalArgumentException when the session has no such part
+     * @throws IllegalStateException    when the part waits although every expected clip is uploaded
      */
     public PartState partState(final int partIndex) {
-        return switch (part(partIndex).status()) {
+        final UploadPart part = parts.stream()
+                .filter(candidate -> candidate.partIndex() == partIndex)
+                .findFirst()
+                .orElseThrow(() -> new IllegalArgumentException("Session '" + id + "' has no part " + partIndex));
+        return switch (part.status()) {
             case COMPLETE -> PartState.COMPLETE;
             case NO_OVERLAP -> PartState.NO_OVERLAP;
-            case WAITING -> waitingState(partIndex);
+            case WAITING -> waitingFor(partIndex);
         };
     }
 
@@ -225,10 +225,10 @@ public record UploadSession(UUID id,
     }
 
     /**
-     * @return how many parts have been published
+     * @return how many parts have been published for extraction
      */
     public int partsPublished() {
-        return (int) parts.stream().filter(UploadPart::isPublished).count();
+        return (int) parts.stream().filter(UploadPart::published).count();
     }
 
     /**
@@ -257,24 +257,29 @@ public record UploadSession(UUID id,
         return overlap.isEmpty() ? new PartTransition.NoOverlap(overlap) : new PartTransition.Complete(overlap);
     }
 
-    private PartState waitingState(final int partIndex) {
-        final List<Camera> missing = expectedCameras().stream()
-                .filter(camera -> clips.stream().noneMatch(clip -> clip.camera() == camera
-                        && clip.partIndex() == partIndex && clip.isUploaded()))
-                .toList();
-        if (missing.equals(List.of(Camera.LEFT))) {
-            return PartState.WAITING_LEFT;
-        }
-        if (missing.equals(List.of(Camera.RIGHT))) {
-            return PartState.WAITING_RIGHT;
-        }
-        return PartState.WAITING;
-    }
-
     private void requirePartIndexInRange(final int partIndex) {
         if (partIndex < 0 || partIndex >= partCount()) {
             throw new PartIndexOutOfRangeException(id, partIndex, partCount());
         }
+    }
+
+    private PartState waitingFor(final int partIndex) {
+        final Camera missing = expectedCameras().stream()
+                .filter(camera -> !isUploaded(camera, partIndex))
+                .findFirst()
+                .orElseThrow(() -> new IllegalStateException("Part " + partIndex + " of session '" + id
+                        + "' is WAITING although every expected clip is uploaded"));
+        return switch (missing) {
+            case SINGLE -> PartState.WAITING;
+            case LEFT -> PartState.WAITING_LEFT;
+            case RIGHT -> PartState.WAITING_RIGHT;
+        };
+    }
+
+    private boolean isUploaded(final Camera camera, final int partIndex) {
+        return clips.stream().anyMatch(clip -> clip.camera() == camera
+                && clip.partIndex() == partIndex
+                && clip.isUploaded());
     }
 
     private Set<Camera> registeredCameras() {

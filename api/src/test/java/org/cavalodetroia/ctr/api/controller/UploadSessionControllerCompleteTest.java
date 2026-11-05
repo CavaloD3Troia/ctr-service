@@ -5,6 +5,7 @@ import org.cavalodetroia.ctr.api.idempotency.IdempotentRequests;
 import org.cavalodetroia.ctr.domain.model.upload.Camera;
 import org.cavalodetroia.ctr.domain.model.upload.ClipConfirmation;
 import org.cavalodetroia.ctr.domain.port.in.CompleteClip;
+import org.cavalodetroia.ctr.domain.port.in.GetUploadSession;
 import org.cavalodetroia.ctr.domain.port.in.RegisterCamera;
 import org.cavalodetroia.ctr.domain.port.out.IdempotencyStore;
 import org.junit.jupiter.api.Test;
@@ -49,6 +50,9 @@ class UploadSessionControllerCompleteTest {
 
     @MockitoBean
     private CompleteClip completeClip;
+
+    @MockitoBean
+    private GetUploadSession getUploadSession;
 
     @MockitoBean
     private RegisterCamera registerCamera;
