@@ -1,6 +1,6 @@
 # ctr-service — how we build it
 
-Control Tower, the only backend the UI talks to. Spring Boot 4.1, Java 25, Maven, Postgres (jOOQ + Flyway),
+Control Tower, the only backend the UI talks to. Spring Boot 4.1, Java 25, Maven, Postgres (jOOQ + Liquibase),
 Kafka (protobuf), hexagonal. The platform design is ADR-0001 in `CavaloD3Troia/CavaloDeTroiaDocumentation`.
 
 **Start small.** The code is a deliberately thin slice: `POST /api/v1/events` → Postgres → `ctr.event.created.v1`
@@ -106,11 +106,18 @@ of the entity whose ordering matters (`event_id`).
 
 ## Persistence
 
-- Schema changes are new Flyway files: `infra/src/main/resources/db/migration/V<n>__<what>.sql`. Never edit a
-  migration once it is on `main`. Make changes additive first: add the column, deploy, backfill, switch reads, and
-  only then drop the old one.
-- jOOQ classes are generated from those migrations at build time (`DDLDatabase`, no DB needed). After adding a
-  migration, run `make build` and use the generated `Tables.*`, never table names in strings.
+- Schema changes are Liquibase changesets in formatted SQL, applied on start. A new change is a new file
+  `infra/src/main/resources/db/changelog/changes/NNNN-<what>.sql` (next number), starting with
+  `--liquibase formatted sql` and a `--changeset ctr:NNNN-<what>` line; `db.changelog-master.yaml` picks it up with
+  `includeAll`. Add it to the changeset list in `schema.feature`.
+- **Never edit a changeset once it is merged**: Liquibase checksums every changeset it ran and fails on a mismatch.
+  Fixes are new changesets. Make changes additive first: add the column, deploy, backfill, switch reads, and only
+  then drop the old one.
+- jOOQ classes are generated from those SQL files at build time (`DDLDatabase`, no DB needed). After adding a
+  changeset, run `make build` and use the generated `Tables.*`, never table names in strings. A Postgres-only
+  statement the jOOQ parser rejects goes between `-- [jooq ignore start]` and `-- [jooq ignore stop]`.
+- The generator runs the SQL on H2, which reads `TEXT` as a CLOB and can't index it: a `TEXT` column in a key is
+  created as `VARCHAR` and turned into `TEXT` in an ignored `ALTER` (see `0002-create-upload-tables.sql`).
 - The port speaks domain types only. The adapter owns the converter and **translates exceptions**: jOOQ/JDBC
   exceptions become domain exceptions (for example, a duplicate key becomes `EventAlreadyExistsException`).
 - Once a converter goes both ways, test the round trip (`toDomain(toRecord(x)).equals(x)`).
@@ -146,7 +153,7 @@ of the entity whose ordering matters (`event_id`).
 
 1. GlobalProtobufModels: a new field number, then release.
 2. `domain` record.
-3. Flyway migration, `make build` (jOOQ regenerates), record converter.
+3. Liquibase changeset, `make build` (jOOQ regenerates), record converter.
 4. The Kafka converter.
 5. The API request/response record, its validation, and the converter.
 6. Unit tests for each converter.
