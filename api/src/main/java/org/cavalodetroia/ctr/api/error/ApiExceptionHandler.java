@@ -5,6 +5,7 @@ import org.cavalodetroia.ctr.domain.exception.CameraSetConflictException;
 import org.cavalodetroia.ctr.domain.exception.EventNotFoundException;
 import org.cavalodetroia.ctr.domain.exception.IdempotencyKeyReusedException;
 import org.cavalodetroia.ctr.domain.exception.PartCountMismatchException;
+import org.cavalodetroia.ctr.domain.exception.SessionNotFoundException;
 import org.cavalodetroia.ctr.domain.exception.VenueSpecException;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -52,6 +53,11 @@ public class ApiExceptionHandler extends ResponseEntityExceptionHandler {
     @ExceptionHandler(EventNotFoundException.class)
     ResponseEntity<Object> eventNotFound(final EventNotFoundException e) {
         return respond(problem(HttpStatus.NOT_FOUND, "EVENT_NOT_FOUND", e.getMessage()));
+    }
+
+    @ExceptionHandler(SessionNotFoundException.class)
+    ResponseEntity<Object> sessionNotFound(final SessionNotFoundException e) {
+        return respond(problem(HttpStatus.NOT_FOUND, "SESSION_NOT_FOUND", e.getMessage()));
     }
 
     @ExceptionHandler(CameraSetConflictException.class)

@@ -4,6 +4,7 @@ import com.jayway.jsonpath.DocumentContext;
 import com.jayway.jsonpath.JsonPath;
 import io.cucumber.java.en.Then;
 import io.cucumber.java.en.When;
+import org.assertj.core.api.InstanceOfAssertFactories;
 import org.springframework.boot.test.web.server.LocalServerPort;
 import org.springframework.web.client.RestClient;
 
@@ -37,6 +38,46 @@ public class OpenApiSteps {
         operation = "$.paths['" + path + "'].post";
         final Map<String, Object> post = document.read(operation);
         assertThat(post).containsKeys("summary", "requestBody", "responses");
+    }
+
+    @Then("it describes GET {string}")
+    public void itDescribesGet(final String path) {
+        operation = "$.paths['" + path + "'].get";
+        final Map<String, Object> get = document.read(operation);
+        assertThat(get).containsKeys("summary", "description", "responses");
+    }
+
+    @Then("the operation answers 200 with a {string}")
+    public void theOperationAnswers200With(final String response) {
+        assertThat(document.read(operation + ".responses['200'].content['application/json'].schema['$ref']",
+                String.class))
+                .endsWith("/" + response);
+    }
+
+    @Then("{string} requires exactly {string}")
+    public void theSchemaRequiresExactly(final String schema, final String fields) {
+        final List<String> required = document.read("$.components.schemas." + schema + ".required");
+        assertThat(required).containsExactlyInAnyOrderElementsOf(names(fields));
+    }
+
+    // OpenAPI 3.1 says null with a "null" type, 3.0 with nullable
+    @Then("{string} may have null {string}")
+    public void theSchemaMayHaveNull(final String schema, final String fields) {
+        for (final String field : names(fields)) {
+            final Map<String, Object> property = document.read("$.components.schemas." + schema + ".properties."
+                    + field);
+            assertThat(property).as("%s.%s", schema, field).satisfiesAnyOf(
+                    nullable -> assertThat(nullable).containsEntry("nullable", true),
+                    typed -> assertThat(typed.get("type")).asInstanceOf(InstanceOfAssertFactories.LIST)
+                            .contains("null"));
+        }
+    }
+
+    @Then("the {string} of {string} is one of {string}")
+    public void thePropertyIsOneOf(final String field, final String schema, final String values) {
+        final List<String> documented = document.read("$.components.schemas." + schema + ".properties." + field
+                + ".enum");
+        assertThat(documented).containsExactlyElementsOf(names(values));
     }
 
     @Then("the operation takes the headers {string}")

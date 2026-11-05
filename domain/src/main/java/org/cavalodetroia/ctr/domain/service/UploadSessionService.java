@@ -3,11 +3,13 @@ package org.cavalodetroia.ctr.domain.service;
 import org.cavalodetroia.ctr.domain.common.Uuid7;
 import org.cavalodetroia.ctr.domain.exception.EventNotFoundException;
 import org.cavalodetroia.ctr.domain.exception.OpenSessionAlreadyExistsException;
+import org.cavalodetroia.ctr.domain.exception.SessionNotFoundException;
 import org.cavalodetroia.ctr.domain.exception.UploadSessionChangedException;
 import org.cavalodetroia.ctr.domain.model.upload.CameraRegistration;
 import org.cavalodetroia.ctr.domain.model.upload.RegistrationResult;
 import org.cavalodetroia.ctr.domain.model.upload.UploadCamera;
 import org.cavalodetroia.ctr.domain.model.upload.UploadSession;
+import org.cavalodetroia.ctr.domain.port.in.GetUploadSession;
 import org.cavalodetroia.ctr.domain.port.in.RegisterCamera;
 import org.cavalodetroia.ctr.domain.port.out.EventRepository;
 import org.cavalodetroia.ctr.domain.port.out.UploadSessionRepository;
@@ -20,10 +22,10 @@ import java.util.Optional;
 import java.util.UUID;
 
 /**
- * Registers cameras on upload sessions. Logs through {@link System.Logger}, the JDK's logging facade, so the domain
- * keeps depending on nothing but the JDK; Spring Boot bridges it to the application's logs.
+ * Registers cameras on upload sessions and reads them back. Logs through {@link System.Logger}, the JDK's logging
+ * facade, so the domain keeps depending on nothing but the JDK; Spring Boot bridges it to the application's logs.
  */
-public class UploadSessionService implements RegisterCamera {
+public class UploadSessionService implements RegisterCamera, GetUploadSession {
 
     private static final System.Logger LOGGER = System.getLogger(UploadSessionService.class.getName());
     // A session takes at most two cameras, so a registration loses at most twice: to the camera that opened the
@@ -56,6 +58,11 @@ public class UploadSessionService implements RegisterCamera {
         final RegistrationResult result = openOrJoinUntilNoRace(eventId, registration);
         log(result);
         return result;
+    }
+
+    @Override
+    public UploadSession get(final UUID sessionId) {
+        return sessions.findById(sessionId).orElseThrow(() -> new SessionNotFoundException(sessionId));
     }
 
     /**

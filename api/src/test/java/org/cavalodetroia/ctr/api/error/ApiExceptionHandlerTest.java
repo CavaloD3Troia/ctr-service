@@ -8,6 +8,7 @@ import org.cavalodetroia.ctr.domain.exception.CameraSetConflictException;
 import org.cavalodetroia.ctr.domain.exception.EventNotFoundException;
 import org.cavalodetroia.ctr.domain.exception.PartCountMismatchException;
 import org.cavalodetroia.ctr.domain.exception.VenueSpecException;
+import org.cavalodetroia.ctr.domain.port.in.GetUploadSession;
 import org.cavalodetroia.ctr.domain.port.in.RegisterCamera;
 import org.cavalodetroia.ctr.domain.port.out.IdempotencyStore;
 import org.junit.jupiter.api.Test;
@@ -44,6 +45,9 @@ class ApiExceptionHandlerTest {
 
     @MockitoBean
     private RegisterCamera registerCamera;
+
+    @MockitoBean
+    private GetUploadSession getUploadSession;
 
     @MockitoBean
     private IdempotencyStore idempotencyStore;

@@ -20,6 +20,14 @@ public interface UploadSessionRepository {
     Optional<UploadSession> findOpenByEvent(UUID eventId);
 
     /**
+     * Reads the whole session in a fixed number of queries, however many parts it has.
+     *
+     * @param sessionId the session
+     * @return the session, with its cameras, clips and parts, if there is one with this id
+     */
+    Optional<UploadSession> findById(UUID sessionId);
+
+    /**
      * Stores a session the first camera just opened: the session, its camera, its clips and its parts.
      *
      * @param session the session returned by {@link UploadSession#open}

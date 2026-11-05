@@ -10,6 +10,7 @@ import org.cavalodetroia.ctr.infra.converter.UploadSessionRecordConverter;
 import org.cavalodetroia.ctr.infra.persistence.jooq.tables.records.UploadCameraRecord;
 import org.cavalodetroia.ctr.infra.persistence.jooq.tables.records.UploadClipRecord;
 import org.cavalodetroia.ctr.infra.persistence.jooq.tables.records.UploadPartRecord;
+import org.cavalodetroia.ctr.infra.persistence.jooq.tables.records.UploadSessionRecord;
 import org.jooq.DSLContext;
 import org.jooq.TableRecord;
 import org.slf4j.MDC;
@@ -52,11 +53,15 @@ public class JooqUploadSessionRepository implements UploadSessionRepository {
                 .where(UPLOAD_SESSION.EVENT_ID.eq(eventId))
                 .and(UPLOAD_SESSION.STATUS.eq(SessionStatus.OPEN.name()))
                 .fetchOptional()
-                .map(session -> {
-                    MDC.put(MDC_SESSION_ID, session.getId().toString());
-                    return converter.toDomain(session, cameras(session.getId()), clips(session.getId()),
-                            parts(session.getId()));
-                });
+                .map(this::withCamerasClipsAndParts);
+    }
+
+    @Override
+    public Optional<UploadSession> findById(final UUID sessionId) {
+        return dsl.selectFrom(UPLOAD_SESSION)
+                .where(UPLOAD_SESSION.ID.eq(sessionId))
+                .fetchOptional()
+                .map(this::withCamerasClipsAndParts);
     }
 
     @Override
@@ -101,6 +106,19 @@ public class JooqUploadSessionRepository implements UploadSessionRepository {
             db.executeInsert(converter.toRecord(session.id(), camera));
             db.batchInsert(clipRecords(session, List.of(camera))).execute();
         });
+    }
+
+    /**
+     * One query per table, whatever the part count. Clips are read before parts: a clip and the part it completes
+     * are written in one transaction, so parts read after the clips are never older than them.
+     */
+    private UploadSession withCamerasClipsAndParts(final UploadSessionRecord session) {
+        final UUID sessionId = session.getId();
+        MDC.put(MDC_SESSION_ID, sessionId.toString());
+        final List<UploadCameraRecord> cameras = cameras(sessionId);
+        final List<UploadClipRecord> clips = clips(sessionId);
+        final List<UploadPartRecord> parts = parts(sessionId);
+        return converter.toDomain(session, cameras, clips, parts);
     }
 
     private List<UploadCameraRecord> cameras(final UUID sessionId) {
