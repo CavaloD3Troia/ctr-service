@@ -4,7 +4,10 @@ package org.cavalodetroia.ctr.domain.model.upload;
  * Where one part stands as the app shows it: which camera it waits for, or how it ended.
  */
 public enum PartState {
-    /** Two cameras: the LEFT clip is missing (when both are, LEFT is named first). */
+    /**
+     * Two cameras: the LEFT clip is missing, or LEFT has not registered yet (when both are missing, LEFT is named
+     * first).
+     */
     WAITING_LEFT,
     /** Two cameras: the RIGHT clip is missing, or RIGHT has not registered yet. */
     WAITING_RIGHT,

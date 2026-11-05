@@ -125,7 +125,7 @@ A part's `status`:
 
 | `status` | When |
 |---|---|
-| `WAITING_LEFT` | Two cameras, and the LEFT clip is not uploaded. Also when neither is: LEFT is named first. |
+| `WAITING_LEFT` | Two cameras, and the LEFT clip is not uploaded, or LEFT has not registered yet (a RIGHT-only session). Also when neither clip is: LEFT is named first. |
 | `WAITING_RIGHT` | Two cameras, and the RIGHT clip is not uploaded, or RIGHT has not registered yet |
 | `WAITING` | A single camera, and its clip is not uploaded |
 | `COMPLETE` | Every clip is uploaded and they overlap; `startMs` and `durationMs` are the shared window |

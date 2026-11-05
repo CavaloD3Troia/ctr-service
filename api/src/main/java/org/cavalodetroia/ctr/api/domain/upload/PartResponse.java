@@ -20,8 +20,8 @@ public record PartResponse(
         @Schema(description = "The part, 0-based", example = "3", requiredMode = Schema.RequiredMode.REQUIRED)
         int partIndex,
 
-        @Schema(description = "WAITING_LEFT or WAITING_RIGHT: two cameras, that camera's clip is missing (LEFT when "
-                + "both are). WAITING: a single camera, its clip is missing. COMPLETE: every clip is in and they "
+        @Schema(description = "WAITING_LEFT or WAITING_RIGHT: two cameras, that camera's clip is missing or the "
+                + "camera has not registered yet (LEFT when both are).WAITING: a single camera, its clip is missing. COMPLETE: every clip is in and they "
                 + "overlap. NO_OVERLAP: every clip is in but they don't overlap.",
                 requiredMode = Schema.RequiredMode.REQUIRED)
         PartState status,
