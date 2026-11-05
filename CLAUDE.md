@@ -3,10 +3,11 @@
 Control Tower, the only backend the UI talks to. Spring Boot 4.1, Java 25, Maven, Postgres (jOOQ + Liquibase),
 Kafka (protobuf), hexagonal. The platform design is ADR-0001 in `CavaloD3Troia/CavaloDeTroiaDocumentation`.
 
-**Start small.** The code is the first two endpoints of the upload flow and nothing more:
-`POST /api/v1/events/{eventId}/upload-session/cameras` (a camera registers) and
-`GET /api/v1/upload-sessions/{sessionId}` (the app reads where the upload stands), both → Postgres. Nothing is
-published to Kafka yet. Build only what
+**Start small.** The code is the first three endpoints of the upload flow and nothing more:
+`POST /api/v1/events/{eventId}/upload-session/cameras` (a camera registers) → Postgres,
+`GET /api/v1/upload-sessions/{sessionId}` (the app reads where the upload stands) → Postgres, and
+`POST /api/v1/upload-sessions/{sessionId}/cameras/{camera}/parts/{partIndex}/complete` (a camera confirms a clip) → an
+S3 `HEAD`, then Postgres. Nothing is published to Kafka yet. Build only what
 the current feature needs. When a feature does need one of the
 patterns below (retries, DLQ, outbox, correlation ids…), implement it **the way this file describes**, not ad hoc.
 The [Not built yet](#not-built-yet) section lists what is missing on purpose.
@@ -18,7 +19,7 @@ The patterns come from the `kafka-rest-service` blueprint (skill of the same nam
 ```sh
 make build            # clean verify: unit + ArchUnit tests
 make component-test   # + Cucumber against the whole app (Testcontainers, needs Docker)
-make deps-up          # Postgres + Kafka only, then run CtrApplication from the IDE (.run/)
+make deps-up          # Postgres + Kafka + MinIO (with the bucket) only, then run CtrApplication from the IDE (.run/)
 make up / logs / down # the app in Docker too
 ```
 
@@ -155,6 +156,11 @@ of the entity whose ordering matters (`event_id`).
   version = <read>`, and no row updated becomes a domain exception (`UploadSessionChangedException`). The service
   then reads again and decides again (`UploadSessionService`); never lock across port calls.
 - Once a converter goes both ways, test the round trip (`toDomain(toRecord(x)).equals(x)`).
+- A decision the domain takes over the session as stored, where the next request must see this one's result (a clip
+  confirmation closing a part), goes through one port call that takes a function:
+  `UploadSessionRepository.update(sessionId, session -> session.completeClip(...))`. The adapter locks the session row
+  (`SELECT … FOR UPDATE`) inside one transaction, applies the function and writes only what it changed. Remote calls
+  (the S3 `HEAD`) happen before it, outside the transaction.
 - **Retries.** Retry only transient failures (connection loss, timeouts), with resilience4j `@Retry`:
   - Limit it to those exceptions with a retry predicate.
   - The fallback logs and **rethrows**. It never returns empty or null, because that turns an outage into "not
@@ -162,6 +168,17 @@ of the entity whose ordering matters (`event_id`).
   - Constraint violations and bad SQL are never retried.
 - The domain never sees `@Transactional`. A transaction that spans several writes (the outbox, for example) is
   opened in infra or application, around the port calls.
+
+## Object storage (S3)
+
+- The domain sees the bucket through `port/out/ClipStorage` only; `infra/storage/S3ClipStorage` implements it with the
+  AWS SDK v2 `S3Client` built by `S3ClientFactory` (path-style, endpoint override for MinIO, credentials and region
+  from `StorageProperties`).
+- ctr-service never downloads a clip: `HEAD` is the only S3 call. Clients upload and download straight to the bucket.
+- Every S3 call is bounded: 5 s for the call, 3 s per attempt, 2 attempts. An SDK failure (timeouts and 403 included)
+  becomes `StorageUnavailableException` → `503 STORAGE_UNAVAILABLE` with `Retry-After`; only a 404 means "not there".
+- Locally and in component tests S3 is MinIO (Chainguard's image, pinned by digest, the same in `docker-compose.yml`
+  and `Containers`). `MinioSupport` plays the camera's side: puts objects, deletes them, pauses the container.
 
 ## Testing
 

@@ -1,6 +1,15 @@
-# `docker compose up -d`                → Postgres + Kafka only (run/debug the app from the IDE)
+# `docker compose up -d`                → Postgres, Kafka and MinIO with the cdt-videos bucket (run/debug the app from
+#                                         the IDE)
 # `docker compose --profile app up -d`  → the app too (see `make up`)
 name: ctr-service
+
+# MinIO no longer publishes images, so this is Chainguard's build of it, pinned by digest (minio
+# RELEASE.2026-10-23T20-06-51Z). Component tests use the same image (component-tests/.../config/Containers)
+x-minio-image: &minio-image cgr.dev/chainguard/minio@sha256:cee9a8e35885e93f14b3cb32960e5017aff74e2adfb52ba87c65003b0163886b
+# Local only: the well-known MinIO defaults, also the defaults of ctr.storage in application.yml
+x-minio-credentials: &minio-credentials
+  MINIO_ROOT_USER: minioadmin
+  MINIO_ROOT_PASSWORD: minioadmin
 
 services:
   postgres:
@@ -45,6 +54,32 @@ services:
       retries: 20
       start_period: 10s
 
+  # S3 for the clips: the API on 9000, the console on http://localhost:9001 (minioadmin / minioadmin)
+  minio:
+    image: *minio-image
+    command: ["server", "/data", "--console-address", ":9001"]
+    environment: *minio-credentials
+    ports:
+      - "9000:9000"
+      - "9001:9001"
+    volumes:
+      - minio-data:/data
+    healthcheck:
+      # No curl or grep in the image, so bash asks the liveness endpoint directly and reads the status line
+      test: ["CMD", "bash", "-c", "exec 3<>/dev/tcp/127.0.0.1/9000 && printf 'GET /minio/health/live HTTP/1.1\\r\\nHost: localhost\\r\\nConnection: close\\r\\n\\r\\n' >&3 && read -r status <&3 && [[ $$status == *' 200 '* ]]"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  # One shot: creates the bucket the cameras upload to, then exits
+  minio-init:
+    image: *minio-image
+    depends_on:
+      minio:
+        condition: service_healthy
+    environment: *minio-credentials
+    entrypoint: ["bash", "-c", "mc alias set local http://minio:9000 \"$$MINIO_ROOT_USER\" \"$$MINIO_ROOT_PASSWORD\" && mc mb --ignore-existing local/cdt-videos"]
+
   ctr-service:
     profiles: [app]
     build: .
@@ -54,9 +89,12 @@ services:
         condition: service_healthy
       kafka:
         condition: service_healthy
+      minio-init:
+        condition: service_completed_successfully
     environment:
       DB_URL: jdbc:postgresql://postgres:5432/ctr
       KAFKA_BOOTSTRAP_SERVERS: kafka:29092
+      S3_ENDPOINT: http://minio:9000
     ports:
       - "8080:8080"
     healthcheck:
@@ -69,3 +107,4 @@ services:
 
 volumes:
   postgres-data:
+  minio-data:

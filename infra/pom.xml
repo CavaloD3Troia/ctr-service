@@ -12,7 +12,7 @@
 
     <artifactId>ctr-infra</artifactId>
     <name>ctr-infra</name>
-    <description>Adapters to the outside world: Postgres (jOOQ + Liquibase) and Kafka (protobuf)</description>
+    <description>Adapters to the outside world: Postgres (jOOQ + Liquibase), Kafka (protobuf) and S3</description>
 
     <dependencies>
         <dependency>
@@ -43,6 +43,23 @@
         <dependency>
             <groupId>org.springframework.boot</groupId>
             <artifactId>spring-boot-starter-kafka</artifactId>
+        </dependency>
+
+        <!-- S3 (MinIO locally), for the HEAD that confirms a clip. The JDK's URL connection client instead of the
+             default Apache one: one HEAD per clip needs no connection pool, and it brings no further jars -->
+        <dependency>
+            <groupId>software.amazon.awssdk</groupId>
+            <artifactId>s3</artifactId>
+            <exclusions>
+                <exclusion>
+                    <groupId>software.amazon.awssdk</groupId>
+                    <artifactId>apache5-client</artifactId>
+                </exclusion>
+            </exclusions>
+        </dependency>
+        <dependency>
+            <groupId>software.amazon.awssdk</groupId>
+            <artifactId>url-connection-client</artifactId>
         </dependency>
 
         <dependency>

@@ -3,15 +3,21 @@ package org.cavalodetroia.ctr.api.converter;
 import org.cavalodetroia.ctr.api.domain.upload.CameraResponse;
 import org.cavalodetroia.ctr.api.domain.upload.CameraSummaryResponse;
 import org.cavalodetroia.ctr.api.domain.upload.ClipResponse;
+import org.cavalodetroia.ctr.api.domain.upload.CompleteClipRequest;
+import org.cavalodetroia.ctr.api.domain.upload.CompleteClipResponse;
 import org.cavalodetroia.ctr.api.domain.upload.PartResponse;
+import org.cavalodetroia.ctr.api.domain.upload.PartSummary;
 import org.cavalodetroia.ctr.api.domain.upload.RegisterCameraRequest;
 import org.cavalodetroia.ctr.api.domain.upload.RegisterCameraResponse;
+import org.cavalodetroia.ctr.api.domain.upload.SessionSummary;
 import org.cavalodetroia.ctr.api.domain.upload.UploadSessionResponse;
 import org.cavalodetroia.ctr.api.domain.venue.VenueRequest;
 import org.cavalodetroia.ctr.api.domain.venue.VenueResponse;
 import org.cavalodetroia.ctr.domain.exception.VenueSpecException;
 import org.cavalodetroia.ctr.domain.model.upload.Camera;
 import org.cavalodetroia.ctr.domain.model.upload.CameraRegistration;
+import org.cavalodetroia.ctr.domain.model.upload.ClipCompletion;
+import org.cavalodetroia.ctr.domain.model.upload.ClipConfirmation;
 import org.cavalodetroia.ctr.domain.model.upload.ObjectKeys;
 import org.cavalodetroia.ctr.domain.model.upload.RegistrationResult;
 import org.cavalodetroia.ctr.domain.model.upload.UploadCamera;
@@ -56,6 +62,25 @@ public class UploadSessionConverter {
                 cameras(session));
     }
 
+    public ClipConfirmation toConfirmation(final CompleteClipRequest request) {
+        return new ClipConfirmation(request.sizeBytes(), request.etag(), request.startMs(), request.durationMs());
+    }
+
+    /**
+     * Built from the session as stored after the confirmation, never from the request, so a repeated confirmation
+     * gets the same body.
+     */
+    public CompleteClipResponse toResponse(final ClipCompletion completion) {
+        final UploadSession session = completion.after();
+        final int partIndex = completion.partIndex();
+        return new CompleteClipResponse(
+                completion.camera(),
+                partIndex,
+                completion.clip().status(),
+                new PartSummary(completion.partState(), session.part(partIndex).published()),
+                new SessionSummary(session.status(), session.partsPublished(), session.partCount()));
+    }
+
     /**
      * Every part by index, each with one clip per registered camera, LEFT before RIGHT. A part's window is only
      * given when the part has one ({@link UploadPart#hasWindow()}).
@@ -93,8 +118,8 @@ public class UploadSessionConverter {
                         part.partIndex(),
                         session.partState(part.partIndex()),
                         part.published(),
-                        part.hasWindow() ? part.startMs() : null,
-                        part.hasWindow() ? part.durationMs() : null,
+                        part.hasWindow() ? part.window().startMs() : null,
+                        part.hasWindow() ? part.window().durationMs() : null,
                         clipsByPart.getOrDefault(part.partIndex(), List.of())))
                 .toList();
     }
@@ -111,8 +136,12 @@ public class UploadSessionConverter {
                         Collectors.mapping(UploadSessionConverter::toResponse, Collectors.toList())));
     }
 
+    // A pending clip has no confirmation yet, so it leaves out what the camera reported
     private static ClipResponse toResponse(final UploadClip clip) {
-        return new ClipResponse(clip.camera(), clip.status(), clip.sizeBytes(), clip.startMs(), clip.durationMs(),
-                clip.uploadedAt());
+        final ClipConfirmation confirmation = clip.confirmation();
+        return confirmation == null
+                ? new ClipResponse(clip.camera(), clip.status(), null, null, null, null)
+                : new ClipResponse(clip.camera(), clip.status(), confirmation.sizeBytes(), confirmation.startMs(),
+                        confirmation.durationMs(), clip.uploadedAt());
     }
 }

@@ -65,7 +65,7 @@ class UploadSessionPartStateTest {
     @CsvSource({"COMPLETE, COMPLETE", "NO_OVERLAP, NO_OVERLAP"})
     void should_giveTheStoredOutcome_when_thePartIsDone(final PartStatus status, final PartState expected) {
         final UploadSession session = withParts(withUploaded(withUploaded(leftAndRight(), Camera.LEFT, 2),
-                Camera.RIGHT, 2), new UploadPart(2, status, 600_000L, 298_000L, null));
+                Camera.RIGHT, 2), new UploadPart(2, status, new Window(600_000L, 298_000L), null));
 
         assertThat(session.partState(2)).isEqualTo(expected);
     }
@@ -96,8 +96,8 @@ class UploadSessionPartStateTest {
     @Test
     void should_countPartsWithAPublicationTime_when_askedForPartsPublished() {
         final UploadSession session = withParts(leftAndRight(),
-                new UploadPart(0, PartStatus.COMPLETE, 0L, 300_000L, PUBLISHED_AT),
-                new UploadPart(1, PartStatus.COMPLETE, 300_000L, 300_000L, null));
+                new UploadPart(0, PartStatus.COMPLETE, new Window(0L, 300_000L), PUBLISHED_AT),
+                new UploadPart(1, PartStatus.COMPLETE, new Window(300_000L, 300_000L), null));
 
         assertThat(session.partsPublished()).isEqualTo(1);
         assertThat(leftAndRight().partsPublished()).isZero();
@@ -106,20 +106,25 @@ class UploadSessionPartStateTest {
     @ParameterizedTest(name = "{0} -> {1}")
     @CsvSource({"WAITING, false", "COMPLETE, true", "NO_OVERLAP, false"})
     void should_haveAWindowOnlyWhenComplete(final PartStatus status, final boolean hasWindow) {
-        assertThat(new UploadPart(0, status, 900_000L, -2_000L, null).hasWindow()).isEqualTo(hasWindow);
+        final UploadPart part = status == PartStatus.WAITING
+                ? UploadPart.waiting(0)
+                : new UploadPart(0, status, new Window(900_000L, -2_000L), null);
+
+        assertThat(part.hasWindow()).isEqualTo(hasWindow);
     }
 
     @Test
     void should_bePublished_when_thePartHasAPublicationTime() {
-        assertThat(new UploadPart(0, PartStatus.COMPLETE, 0L, 1L, PUBLISHED_AT).published()).isTrue();
+        assertThat(new UploadPart(0, PartStatus.COMPLETE, new Window(0L, 1L), PUBLISHED_AT).published()).isTrue();
         assertThat(UploadPart.waiting(0).published()).isFalse();
     }
 
     @Test
     void should_rejectAnUploadedClip_when_itLacksWhatTheCameraReported() {
-        assertThatThrownBy(() -> new UploadClip(Camera.LEFT, 0, "k", ClipStatus.UPLOADED, 1L, 0L, 1L, null))
+        assertThatThrownBy(() -> new UploadClip(Camera.LEFT, 0, "k", ClipStatus.UPLOADED,
+                ClipConfirmations.confirmation(), null))
                 .isInstanceOf(IllegalArgumentException.class)
                 .hasMessageContaining("UPLOADED");
-        assertThat(UploadClip.pending(Camera.LEFT, 0, "k").sizeBytes()).isNull();
+        assertThat(UploadClip.pending(Camera.LEFT, 0, "k").confirmation()).isNull();
     }
 }

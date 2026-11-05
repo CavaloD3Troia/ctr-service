@@ -23,7 +23,7 @@ build: ## Compile and run the unit and architecture tests
 	./mvnw -B clean verify
 
 .PHONY: component-test
-component-test: ## Run the Cucumber component tests (Postgres and Kafka in Testcontainers, needs Docker)
+component-test: ## Run the Cucumber component tests (Postgres, Kafka and MinIO in Testcontainers, needs Docker)
 	$(TESTCONTAINERS_ENV) ./mvnw -B clean verify -Pcomponent-tests
 
 .PHONY: package
@@ -32,13 +32,15 @@ package: ## Build the runnable jar, skipping the tests
 
 # --- Run locally ------------------------------------------------------------------------------
 
+# `--wait` treats a container that exits as a failure, so the one-shot minio-init (it creates the bucket) runs on its own
 .PHONY: deps-up
-deps-up: ## Start only Postgres and Kafka, then run or debug CtrApplication from the IDE
-	$(COMPOSE) up -d --wait
+deps-up: ## Start only Postgres, Kafka and MinIO (with the bucket), then run or debug CtrApplication from the IDE
+	$(COMPOSE) up -d --wait postgres kafka minio
+	$(COMPOSE) run --rm minio-init
 
 .PHONY: up
-up: package ## Build the app and start it in Docker together with Postgres and Kafka
-	$(COMPOSE) --profile app up -d --build --wait
+up: package deps-up ## Build the app and start it in Docker together with Postgres, Kafka and MinIO
+	$(COMPOSE) --profile app up -d --build --wait --no-deps ctr-service
 
 .PHONY: run
 run: package ## Run the app on this machine, against `make deps-up`

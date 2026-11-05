@@ -70,8 +70,8 @@ public final class CameraRegistrations {
                                              final int... partIndexes) {
         final Set<Integer> uploaded = IntStream.of(partIndexes).boxed().collect(Collectors.toSet());
         return withClips(session, clip -> clip.camera() == camera && uploaded.contains(clip.partIndex())
-                ? new UploadClip(clip.camera(), clip.partIndex(), clip.objectKey(), ClipStatus.UPLOADED,
-                        1_073_741_824L, clip.partIndex() * 300_000L, 300_000L, JOINED_AT)
+                ? clip.uploaded(new ClipConfirmation(ClipConfirmations.SIZE_BYTES, ClipConfirmations.ETAG,
+                        clip.partIndex() * 300_000L, 300_000L), JOINED_AT)
                 : clip);
     }
 

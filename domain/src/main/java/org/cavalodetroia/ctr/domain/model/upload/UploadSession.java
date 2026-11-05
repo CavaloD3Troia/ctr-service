@@ -1,7 +1,10 @@
 package org.cavalodetroia.ctr.domain.model.upload;
 
 import org.cavalodetroia.ctr.domain.exception.CameraSetConflictException;
+import org.cavalodetroia.ctr.domain.exception.ClipAlreadyCompletedException;
 import org.cavalodetroia.ctr.domain.exception.PartCountMismatchException;
+import org.cavalodetroia.ctr.domain.exception.PartIndexOutOfRangeException;
+import org.cavalodetroia.ctr.domain.exception.UnknownCameraException;
 import org.cavalodetroia.ctr.domain.exception.VenueSpecException;
 import org.cavalodetroia.ctr.domain.model.venue.VenueSpec;
 
@@ -18,11 +21,14 @@ import java.util.stream.Stream;
 /**
  * The upload of one event's match: the cameras filming it, one clip per camera and part, and the parts themselves.
  * The first camera opens the session and sets the venue; a second one may join. A session ends with the cameras
- * {@code {SINGLE}} or {@code {LEFT, RIGHT}}, all with the same number of parts.
+ * {@code {SINGLE}} or {@code {LEFT, RIGHT}}, all with the same number of parts. Each camera confirms its clips as it
+ * uploads them; a part closes when every expected camera has uploaded its clip of it, and the session completes when
+ * every clip is uploaded.
  *
  * @param id        UUIDv7
  * @param eventId   the event filmed
- * @param status    {@link SessionStatus#OPEN} while cameras register and upload
+ * @param status    {@link SessionStatus#OPEN} while cameras register and upload, {@link SessionStatus#COMPLETED} once
+ *                  every clip of every expected camera is uploaded
  * @param venue     the pitch, set by the first camera
  * @param createdAt when the first camera opened it
  * @param updatedAt when a camera last registered
@@ -113,19 +119,72 @@ public record UploadSession(UUID id,
     }
 
     /**
-     * @return how many clips of this camera are in the bucket
+     * A camera confirms a clip it uploaded. The clip becomes {@link ClipStatus#UPLOADED}. When every
+     * {@link #expectedCameras() expected camera} has then uploaded its clip of the part, the part closes with its
+     * window: the clip's own for {@code SINGLE}, the {@link Window#overlap overlap} of the two clips for {@code LEFT}
+     * and {@code RIGHT}, and {@link PartStatus#NO_OVERLAP} instead of {@link PartStatus#COMPLETE} when that overlap
+     * is empty. When every clip of every expected camera is uploaded, the session becomes
+     * {@link SessionStatus#COMPLETED}. Confirming an uploaded clip again with the same confirmation changes nothing.
+     *
+     * @param camera       the camera whose clip it is
+     * @param partIndex    the part of the clip, 0-based
+     * @param confirmation what the camera says about the clip
+     * @param now          the time of the confirmation
+     * @return the session after the confirmation and what it did to the part
+     * @throws UnknownCameraException         when the camera is not registered on the session
+     * @throws PartIndexOutOfRangeException   when the part index is outside {@code 0 .. partCount - 1}
+     * @throws ClipAlreadyCompletedException  when the clip is already uploaded with another confirmation
      */
-    public int partsUploaded(final Camera camera) {
-        return (int) clips.stream()
-                .filter(clip -> clip.camera() == camera && clip.status() == ClipStatus.UPLOADED)
-                .count();
+    public ClipCompletion completeClip(final Camera camera,
+                                       final int partIndex,
+                                       final ClipConfirmation confirmation,
+                                       final Instant now) {
+        final UploadClip clip = clip(camera, partIndex);
+        if (clip.isUploaded()) {
+            if (!clip.confirmation().equals(confirmation)) {
+                throw new ClipAlreadyCompletedException(id, camera, partIndex);
+            }
+            return ClipCompletion.noop(this, camera, partIndex);
+        }
+
+        final List<UploadClip> clipsAfter = replace(clips, clip, clip.uploaded(confirmation, now));
+        final PartTransition transition = transitionOf(partIndex, clipsAfter);
+        final UploadPart part = part(partIndex);
+        final List<UploadPart> partsAfter = replace(parts, part, part.after(transition));
+        final boolean completed = registeredCameras().containsAll(expectedCameras())
+                && clipsAfter.stream().allMatch(UploadClip::isUploaded);
+        final UploadSession after = new UploadSession(id, eventId, completed ? SessionStatus.COMPLETED : status, venue,
+                createdAt, updatedAt, version, cameras, clipsAfter, partsAfter);
+        return new ClipCompletion(after, camera, partIndex, transition, completed, false);
     }
 
     /**
-     * @return how many parts have been published for extraction
+     * @return the clip of {@code camera} for the part
+     * @throws UnknownCameraException       when the camera is not registered on the session
+     * @throws PartIndexOutOfRangeException when the part index is outside {@code 0 .. partCount - 1}
      */
-    public int partsPublished() {
-        return (int) parts.stream().filter(UploadPart::published).count();
+    public UploadClip clip(final Camera camera, final int partIndex) {
+        if (!registeredCameras().contains(camera)) {
+            throw new UnknownCameraException(id, camera);
+        }
+        requirePartIndexInRange(partIndex);
+        return clips.stream()
+                .filter(clip -> clip.camera() == camera && clip.partIndex() == partIndex)
+                .findFirst()
+                .orElseThrow(() -> new IllegalStateException("Session '" + id + "' has no clip " + camera + " "
+                        + partIndex));
+    }
+
+    /**
+     * @return the part with this index
+     * @throws PartIndexOutOfRangeException when the part index is outside {@code 0 .. partCount - 1}
+     */
+    public UploadPart part(final int partIndex) {
+        requirePartIndexInRange(partIndex);
+        return parts.stream()
+                .filter(part -> part.partIndex() == partIndex)
+                .findFirst()
+                .orElseThrow(() -> new IllegalStateException("Session '" + id + "' has no part " + partIndex));
     }
 
     /**
@@ -158,6 +217,52 @@ public record UploadSession(UUID id,
         };
     }
 
+    /**
+     * @return how many parts the match is cut into
+     */
+    public int partCount() {
+        return parts.size();
+    }
+
+    /**
+     * @return how many parts have been published for extraction
+     */
+    public int partsPublished() {
+        return (int) parts.stream().filter(UploadPart::published).count();
+    }
+
+    /**
+     * @return how many clips of this camera are in the bucket
+     */
+    public int partsUploaded(final Camera camera) {
+        return (int) clips.stream()
+                .filter(clip -> clip.camera() == camera && clip.status() == ClipStatus.UPLOADED)
+                .count();
+    }
+
+    private PartTransition transitionOf(final int partIndex, final List<UploadClip> clipsAfter) {
+        final Set<Camera> expectedCameras = expectedCameras();
+        final List<UploadClip> expected = clipsAfter.stream()
+                .filter(clip -> clip.partIndex() == partIndex && expectedCameras.contains(clip.camera()))
+                .toList();
+        // A camera that has not registered yet has no clip at all
+        if (expected.size() < expectedCameras.size() || !expected.stream().allMatch(UploadClip::isUploaded)) {
+            return PartTransition.NONE;
+        }
+        if (expected.size() == 1) {
+            return new PartTransition.Complete(expected.getFirst().confirmation().window());
+        }
+        final Window overlap = Window.overlap(expected.get(0).confirmation().window(),
+                expected.get(1).confirmation().window());
+        return overlap.isEmpty() ? new PartTransition.NoOverlap(overlap) : new PartTransition.Complete(overlap);
+    }
+
+    private void requirePartIndexInRange(final int partIndex) {
+        if (partIndex < 0 || partIndex >= partCount()) {
+            throw new PartIndexOutOfRangeException(id, partIndex, partCount());
+        }
+    }
+
     private PartState waitingFor(final int partIndex) {
         final Camera missing = expectedCameras().stream()
                 .filter(camera -> !isUploaded(camera, partIndex))
@@ -174,7 +279,7 @@ public record UploadSession(UUID id,
     private boolean isUploaded(final Camera camera, final int partIndex) {
         return clips.stream().anyMatch(clip -> clip.camera() == camera
                 && clip.partIndex() == partIndex
-                && clip.status() == ClipStatus.UPLOADED);
+                && clip.isUploaded());
     }
 
     private Set<Camera> registeredCameras() {
@@ -226,6 +331,10 @@ public record UploadSession(UUID id,
         return IntStream.range(0, partCount)
                 .mapToObj(UploadPart::waiting)
                 .toList();
+    }
+
+    private static <T> List<T> replace(final List<T> existing, final T old, final T replacement) {
+        return existing.stream().map(item -> item.equals(old) ? replacement : item).toList();
     }
 
     private static <T> List<T> append(final List<T> existing, final List<T> added) {

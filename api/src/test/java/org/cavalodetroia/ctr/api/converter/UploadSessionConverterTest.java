@@ -1,12 +1,19 @@
 package org.cavalodetroia.ctr.api.converter;
 
 import org.cavalodetroia.ctr.api.domain.upload.CameraSummaryResponse;
+import org.cavalodetroia.ctr.api.domain.upload.CompleteClipRequest;
+import org.cavalodetroia.ctr.api.domain.upload.CompleteClipResponse;
+import org.cavalodetroia.ctr.api.domain.upload.PartSummary;
 import org.cavalodetroia.ctr.api.domain.upload.RegisterCameraRequest;
 import org.cavalodetroia.ctr.api.domain.upload.RegisterCameraResponse;
+import org.cavalodetroia.ctr.api.domain.upload.SessionSummary;
 import org.cavalodetroia.ctr.api.domain.venue.VenueRequest;
 import org.cavalodetroia.ctr.domain.exception.VenueSpecException;
 import org.cavalodetroia.ctr.domain.model.upload.Camera;
 import org.cavalodetroia.ctr.domain.model.upload.CameraRegistration;
+import org.cavalodetroia.ctr.domain.model.upload.ClipConfirmation;
+import org.cavalodetroia.ctr.domain.model.upload.ClipStatus;
+import org.cavalodetroia.ctr.domain.model.upload.PartState;
 import org.cavalodetroia.ctr.domain.model.upload.SessionStatus;
 import org.cavalodetroia.ctr.domain.model.venue.RequestedVenue;
 import org.junit.jupiter.api.Test;
@@ -17,11 +24,14 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.cavalodetroia.ctr.api.Registrations.EVENT_ID;
 import static org.cavalodetroia.ctr.api.Registrations.SESSION_ID;
+import static org.cavalodetroia.ctr.api.Registrations.leftConfirmedPart3;
 import static org.cavalodetroia.ctr.api.Registrations.leftOpened;
+import static org.cavalodetroia.ctr.api.Registrations.rightConfirmedPart3AfterLeft;
 import static org.cavalodetroia.ctr.api.Registrations.rightJoinedLeft;
 
 /**
- * AC-1, AC-2: the request to the domain registration, and the registration result to the response body.
+ * TH-137 AC-1, AC-2: the request to the domain registration, and the registration result to the response body.
+ * TH-142 AC-1, AC-2: the clip confirmation to the domain, and the completion to the response body.
  */
 class UploadSessionConverterTest {
 
@@ -80,5 +90,29 @@ class UploadSessionConverterTest {
         assertThat(response.cameras()).containsExactly(
                 new CameraSummaryResponse(Camera.LEFT, 0, 40),
                 new CameraSummaryResponse(Camera.RIGHT, 0, 40));
+    }
+
+    @Test
+    void should_carryTheBodyAsSent_when_convertingAClipConfirmation() {
+        final CompleteClipRequest request = new CompleteClipRequest(1_073_741_824L, "\"9b2cf5\"", 900_000L, 300_000L);
+
+        assertThat(converter.toConfirmation(request))
+                .isEqualTo(new ClipConfirmation(1_073_741_824L, "\"9b2cf5\"", 900_000, 300_000));
+    }
+
+    @Test
+    void should_waitForTheOtherCamera_when_convertingTheFirstClipOfAPart() {
+        final CompleteClipResponse response = converter.toResponse(leftConfirmedPart3());
+
+        assertThat(response).isEqualTo(new CompleteClipResponse(Camera.LEFT, 3, ClipStatus.UPLOADED,
+                new PartSummary(PartState.WAITING_RIGHT, false), new SessionSummary(SessionStatus.OPEN, 0, 40)));
+    }
+
+    @Test
+    void should_sayComplete_when_convertingTheSecondClipOfAPart() {
+        final CompleteClipResponse response = converter.toResponse(rightConfirmedPart3AfterLeft());
+
+        assertThat(response.camera()).isEqualTo(Camera.RIGHT);
+        assertThat(response.part()).isEqualTo(new PartSummary(PartState.COMPLETE, false));
     }
 }

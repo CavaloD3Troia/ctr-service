@@ -86,15 +86,28 @@ public class OpenApiSteps {
         assertThat(documented).containsExactlyInAnyOrderElementsOf(names(headers));
     }
 
-    @Then("the operation takes a {string} and answers 201 with a {string}")
-    public void theOperationTakesAndAnswers(final String request, final String response) {
+    @Then("the operation takes the path parameters {string}")
+    public void theOperationTakesThePathParameters(final String parameters) {
+        final List<String> documented = document.read(operation + ".parameters[?(@.in == 'path')].name");
+        assertThat(documented).containsExactlyInAnyOrderElementsOf(names(parameters));
+    }
+
+    @Then("the operation takes a {string} with the required fields {string} and answers {int} with a {string}")
+    public void theOperationTakesAndAnswers(final String request, final String required, final int status,
+                                            final String response) {
         assertThat(document.read(operation + ".requestBody.content['application/json'].schema['$ref']", String.class))
                 .endsWith("/" + request);
-        assertThat(document.read(operation + ".responses['201'].content['application/json'].schema['$ref']",
+        assertThat(document.read(operation + ".responses['" + status + "'].content['application/json'].schema['$ref']",
                 String.class))
                 .endsWith("/" + response);
         assertThat(document.read("$.components.schemas." + request + ".required", List.class))
-                .contains("camera", "partCount", "contentType");
+                .containsExactlyInAnyOrderElementsOf(names(required));
+    }
+
+    @Then("the {string} response header of {int} is documented")
+    public void theResponseHeaderIsDocumented(final String header, final int status) {
+        final Map<String, Object> headers = document.read(operation + ".responses['" + status + "'].headers");
+        assertThat(headers).containsKey(header);
     }
 
     // The format is a string in VenueRequest, checked by the domain on the first camera only; the document still

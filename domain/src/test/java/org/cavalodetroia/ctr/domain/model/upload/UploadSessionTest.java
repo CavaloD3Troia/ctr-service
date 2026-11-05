@@ -54,9 +54,9 @@ class UploadSessionTest {
                         tuple(Camera.LEFT, 1, KEY_PREFIX + "LEFT/1.mp4", ClipStatus.PENDING),
                         tuple(Camera.LEFT, 2, KEY_PREFIX + "LEFT/2.mp4", ClipStatus.PENDING));
         assertThat(session.parts()).containsExactly(
-                new UploadPart(0, PartStatus.WAITING, null, null, null),
-                new UploadPart(1, PartStatus.WAITING, null, null, null),
-                new UploadPart(2, PartStatus.WAITING, null, null, null));
+                UploadPart.waiting(0),
+                UploadPart.waiting(1),
+                UploadPart.waiting(2));
         assertThat(result.venueIgnored()).isFalse();
         assertThat(session.version()).isZero();
     }

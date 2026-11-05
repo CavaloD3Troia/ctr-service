@@ -3,6 +3,7 @@ package org.cavalodetroia.ctr.api.controller;
 import org.cavalodetroia.ctr.api.converter.UploadSessionConverter;
 import org.cavalodetroia.ctr.api.idempotency.IdempotentRequests;
 import org.cavalodetroia.ctr.domain.exception.SessionNotFoundException;
+import org.cavalodetroia.ctr.domain.port.in.CompleteClip;
 import org.cavalodetroia.ctr.domain.port.in.GetUploadSession;
 import org.cavalodetroia.ctr.domain.port.in.RegisterCamera;
 import org.cavalodetroia.ctr.domain.port.out.IdempotencyStore;
@@ -38,6 +39,9 @@ class UploadSessionControllerGetTest {
 
     @MockitoBean
     private GetUploadSession getUploadSession;
+
+    @MockitoBean
+    private CompleteClip completeClip;
 
     @MockitoBean
     private RegisterCamera registerCamera;
