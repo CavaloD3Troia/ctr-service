@@ -8,8 +8,7 @@ import org.cavalodetroia.ctr.domain.exception.VenueSpecException;
 import org.cavalodetroia.ctr.domain.model.upload.Camera;
 import org.cavalodetroia.ctr.domain.model.upload.CameraRegistration;
 import org.cavalodetroia.ctr.domain.model.upload.SessionStatus;
-import org.cavalodetroia.ctr.domain.model.venue.VenueFormat;
-import org.cavalodetroia.ctr.domain.model.venue.VenueSpec;
+import org.cavalodetroia.ctr.domain.model.venue.RequestedVenue;
 import org.junit.jupiter.api.Test;
 
 import java.util.List;
@@ -31,20 +30,21 @@ class UploadSessionConverterTest {
     private final UploadSessionConverter converter = new UploadSessionConverter();
 
     @Test
-    void should_carryCameraPartCountAndMeasuredVenue_when_convertingTheRequest() {
+    void should_carryCameraPartCountAndTheVenueAsSent_when_convertingTheRequest() {
         final RegisterCameraRequest request = new RegisterCameraRequest(Camera.LEFT, 40, "video/mp4",
-                new VenueRequest(VenueFormat.FOOTBALL_11V11, 105.0, 68.0));
+                new VenueRequest("FOOTBALL_11V11", 105.0, 68.0));
 
         assertThat(converter.toRegistration(request)).isEqualTo(
-                new CameraRegistration(Camera.LEFT, 40, new VenueSpec(VenueFormat.FOOTBALL_11V11, 105, 68)));
+                new CameraRegistration(Camera.LEFT, 40, new RequestedVenue("FOOTBALL_11V11", 105.0, 68.0)));
     }
 
+    // The format is the domain's to check, and only on the first camera of a session
     @Test
-    void should_useTheStandardDimensions_when_theRequestVenueHasNoMeasures() {
-        final RegisterCameraRequest request = new RegisterCameraRequest(Camera.SINGLE, 10, "video/mp4",
-                new VenueRequest(VenueFormat.FUTSAL_5V5, null, null));
+    void should_notCheckTheFormat_when_convertingTheRequest() {
+        final RegisterCameraRequest request = new RegisterCameraRequest(Camera.RIGHT, 40, "video/mp4",
+                new VenueRequest("HOCKEY", null, null));
 
-        assertThat(converter.toRegistration(request).venue()).isEqualTo(new VenueSpec(VenueFormat.FUTSAL_5V5, 40, 20));
+        assertThat(converter.toRegistration(request).venue()).isEqualTo(new RequestedVenue("HOCKEY", null, null));
     }
 
     @Test
@@ -57,7 +57,7 @@ class UploadSessionConverterTest {
     @Test
     void should_rejectTheVenue_when_onlyOneMeasureIsGiven() {
         final RegisterCameraRequest request = new RegisterCameraRequest(Camera.LEFT, 40, "video/mp4",
-                new VenueRequest(VenueFormat.FOOTBALL_7V7, 60.0, null));
+                new VenueRequest("FOOTBALL_7V7", 60.0, null));
 
         assertThatThrownBy(() -> converter.toRegistration(request)).isInstanceOf(VenueSpecException.class);
     }

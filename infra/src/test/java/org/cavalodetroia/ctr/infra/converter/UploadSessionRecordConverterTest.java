@@ -5,8 +5,7 @@ import org.cavalodetroia.ctr.domain.model.upload.CameraRegistration;
 import org.cavalodetroia.ctr.domain.model.upload.ClipStatus;
 import org.cavalodetroia.ctr.domain.model.upload.UploadClip;
 import org.cavalodetroia.ctr.domain.model.upload.UploadSession;
-import org.cavalodetroia.ctr.domain.model.venue.VenueFormat;
-import org.cavalodetroia.ctr.domain.model.venue.VenueSpec;
+import org.cavalodetroia.ctr.domain.model.venue.RequestedVenue;
 import org.cavalodetroia.ctr.infra.persistence.jooq.tables.records.UploadSessionRecord;
 import org.junit.jupiter.api.Test;
 
@@ -31,7 +30,7 @@ class UploadSessionRecordConverterTest {
 
     @Test
     void should_storeTheVenueFormatAndMeasures_when_convertingASession() {
-        final UploadSession session = leftThenRight(VenueSpec.of(VenueFormat.FOOTBALL_7V7, 60.5, 40.25));
+        final UploadSession session = leftThenRight(new RequestedVenue("FOOTBALL_7V7", 60.5, 40.25));
 
         final UploadSessionRecord record = converter.toRecord(session);
 
@@ -59,7 +58,7 @@ class UploadSessionRecordConverterTest {
 
     @Test
     void should_giveBackTheSameSession_when_roundTrippingThroughTheRecords() {
-        final UploadSession session = leftThenRight(VenueSpec.of(VenueFormat.FOOTBALL_11V11, null, null));
+        final UploadSession session = leftThenRight(new RequestedVenue("FOOTBALL_11V11", null, null));
 
         final UploadSession back = converter.toDomain(
                 converter.toRecord(session),
@@ -70,7 +69,7 @@ class UploadSessionRecordConverterTest {
         assertThat(back).isEqualTo(session);
     }
 
-    private static UploadSession leftThenRight(final VenueSpec venue) {
+    private static UploadSession leftThenRight(final RequestedVenue venue) {
         final UploadSession left = UploadSession.open(SESSION_ID, EVENT_ID,
                 new CameraRegistration(Camera.LEFT, 2, venue), "cdt-videos", OPENED_AT).session();
         return left.join(new CameraRegistration(Camera.RIGHT, 2, null), "cdt-videos", JOINED_AT).session();

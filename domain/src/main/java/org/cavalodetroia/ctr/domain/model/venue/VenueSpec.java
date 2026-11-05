@@ -21,29 +21,10 @@ public record VenueSpec(VenueFormat format, double lengthM, double widthM) {
     }
 
     /**
-     * The venue as the user described it.
-     *
-     * @param format  the kind of pitch, required
-     * @param lengthM the measured length in metres, or {@code null} for the standard of the format
-     * @param widthM  the measured width in metres, or {@code null} for the standard of the format
-     * @return the measured venue, or the standard one when both measures are {@code null}
-     * @throws VenueSpecException when the format is missing, when only one measure is given, or when a measure is
-     *                            not positive
+     * @return the venue of this format with its standard dimensions
      */
-    public static VenueSpec of(final VenueFormat format, final Double lengthM, final Double widthM) {
-        if (format == null) {
-            throw new VenueSpecException("venue.format", "must not be null");
-        }
-        if (lengthM == null && widthM == null) {
-            return new VenueSpec(format, format.standardLengthM(), format.standardWidthM());
-        }
-        if (lengthM == null) {
-            throw new VenueSpecException("venue.lengthM", "must be given together with venue.widthM");
-        }
-        if (widthM == null) {
-            throw new VenueSpecException("venue.widthM", "must be given together with venue.lengthM");
-        }
-        return new VenueSpec(format, lengthM, widthM);
+    public static VenueSpec standard(final VenueFormat format) {
+        return new VenueSpec(format, format.standardLengthM(), format.standardWidthM());
     }
 
     private static void requirePositive(final String field, final double metres) {

@@ -56,6 +56,14 @@ public class OpenApiSteps {
                 .contains("camera", "partCount", "contentType");
     }
 
+    // The format is a string in VenueRequest, checked by the domain on the first camera only; the document still
+    // lists the formats
+    @Then("the venue format is one of {string}")
+    public void theVenueFormatIsOneOf(final String formats) {
+        final List<String> documented = document.read("$.components.schemas.VenueRequest.properties.format.enum");
+        assertThat(documented).containsExactlyElementsOf(names(formats));
+    }
+
     @Then("the operation answers these statuses, each with the X-Correlation-Id header")
     public void theOperationAnswersTheseStatuses(final List<Map<String, String>> statuses) {
         final Map<String, Object> responses = document.read(operation + ".responses");

@@ -66,7 +66,7 @@ public record UploadSession(UUID id,
      * @param bucket  the bucket the clips are uploaded to
      * @param now     the time of the registration
      * @return the open session, with the first camera
-     * @throws VenueSpecException when the registration has no venue
+     * @throws VenueSpecException when the registration has no venue, or its format is missing or unknown
      */
     public static RegistrationResult open(final UUID id,
                                           final UUID eventId,
@@ -76,15 +76,17 @@ public record UploadSession(UUID id,
         if (!first.hasVenue()) {
             throw new VenueSpecException("venue", "is required for the first camera of a session");
         }
+        final VenueSpec venue = first.venue().toSpec();
         final UploadCamera camera = registeredCamera(bucket, eventId, id, first, now);
-        final UploadSession session = new UploadSession(id, eventId, SessionStatus.OPEN, first.venue(), now, now,
+        final UploadSession session = new UploadSession(id, eventId, SessionStatus.OPEN, venue, now, now,
                 List.of(camera), pendingClips(eventId, id, first), waitingParts(first.partCount()));
         return new RegistrationResult(session, camera, false);
     }
 
     /**
      * A later camera joins the session: the camera and a {@link ClipStatus#PENDING} clip for each of its parts. The
-     * parts are already there. A venue on this registration is ignored, the first camera set it.
+     * parts are already there. A venue on this registration is ignored, whatever its format: the first camera set
+     * it.
      *
      * @param next   the registration of the joining camera
      * @param bucket the bucket the clips are uploaded to

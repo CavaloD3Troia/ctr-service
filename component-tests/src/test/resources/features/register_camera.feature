@@ -38,13 +38,20 @@ Feature: Register a camera on an event's upload session
     Then the response status is 201
     And the session venue in the database is FOOTBALL_11V11 measuring 105 by 68 metres
 
-  # AC-4
-  Scenario: The venue of a later camera is ignored
+  # AC-4: only the first camera's venue counts, so a later one is not checked beyond its measures going together
+  Scenario Outline: The venue of a later camera is ignored: <venue>
     Given the LEFT camera registers with 40 parts on a FOOTBALL_11V11 venue measuring 100 by 64 metres
-    When the RIGHT camera registers with 40 parts on a FUTSAL_5V5 venue without measures
+    When the RIGHT camera registers with 40 parts and the venue '<venue>'
     Then the response status is 201
     And the session venue in the database is FOOTBALL_11V11 measuring 100 by 64 metres
     And a warning says the venue was ignored
+
+    Examples:
+      | venue                                            |
+      | {"format": "FUTSAL_5V5"}                         |
+      | {}                                               |
+      | {"format": "HOCKEY"}                             |
+      | {"lengthM": 100, "widthM": 60}                   |
 
   # AC-5
   Scenario: A single camera cannot join a session with a left camera
@@ -97,6 +104,19 @@ Feature: Register a camera on an event's upload session
     And the problem lists the invalid field "venue"
     And the event has no upload session
 
+  # AC-6
+  Scenario Outline: The first camera must send a valid venue format: <venue>
+    When the LEFT camera registers with 40 parts and the venue '<venue>'
+    Then the response status is 400
+    And the response is a problem with the code "VALIDATION_FAILED"
+    And the problem lists the invalid field "venue.format"
+    And the event has no upload session
+
+    Examples:
+      | venue                |
+      | {"format": "HOCKEY"} |
+      | {}                   |
+
   # AC-6: the body is checked before the event, so an unknown event still gets the 400
   Scenario Outline: An invalid body is rejected and names the field: <rule>
     Given the event is unknown
@@ -114,7 +134,6 @@ Feature: Register a camera on an event's upload session
       | partCount below 1          | partCount    | {"camera": "LEFT", "partCount": 0, "contentType": "video/mp4"}                                                   |
       | partCount above 1000       | partCount    | {"camera": "LEFT", "partCount": 1001, "contentType": "video/mp4"}                                                |
       | contentType not video      | contentType  | {"camera": "LEFT", "partCount": 40, "contentType": "application/octet-stream"}                                   |
-      | venue format not valid     | venue.format | {"camera": "LEFT", "partCount": 40, "contentType": "video/mp4", "venue": {"format": "HOCKEY"}}                   |
       | venue length without width | venue.widthM | {"camera": "LEFT", "partCount": 40, "contentType": "video/mp4", "venue": {"format": "FUTSAL_5V5", "lengthM": 40}} |
 
   # AC-8, AC-9

@@ -3,8 +3,7 @@ package org.cavalodetroia.ctr.domain.model.upload;
 import org.cavalodetroia.ctr.domain.exception.CameraSetConflictException;
 import org.cavalodetroia.ctr.domain.exception.PartCountMismatchException;
 import org.cavalodetroia.ctr.domain.exception.VenueSpecException;
-import org.cavalodetroia.ctr.domain.model.venue.VenueFormat;
-import org.cavalodetroia.ctr.domain.model.venue.VenueSpec;
+import org.cavalodetroia.ctr.domain.model.venue.RequestedVenue;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.CsvSource;
@@ -19,6 +18,7 @@ import static org.cavalodetroia.ctr.domain.model.upload.CameraRegistrations.BUCK
 import static org.cavalodetroia.ctr.domain.model.upload.CameraRegistrations.EVENT_ID;
 import static org.cavalodetroia.ctr.domain.model.upload.CameraRegistrations.JOINED_AT;
 import static org.cavalodetroia.ctr.domain.model.upload.CameraRegistrations.OPENED_AT;
+import static org.cavalodetroia.ctr.domain.model.upload.CameraRegistrations.REQUESTED_VENUE;
 import static org.cavalodetroia.ctr.domain.model.upload.CameraRegistrations.SESSION_ID;
 import static org.cavalodetroia.ctr.domain.model.upload.CameraRegistrations.VENUE;
 import static org.cavalodetroia.ctr.domain.model.upload.CameraRegistrations.first;
@@ -64,6 +64,16 @@ class UploadSessionTest {
         assertThatThrownBy(() -> UploadSession.open(SESSION_ID, EVENT_ID, joining(Camera.LEFT), BUCKET, OPENED_AT))
                 .isInstanceOfSatisfying(VenueSpecException.class,
                         e -> assertThat(e.field()).isEqualTo("venue"));
+    }
+
+    @ParameterizedTest(name = "format {0}")
+    @CsvSource(value = {"NULL", "HOCKEY", "football_11v11"}, nullValues = "NULL")
+    void should_rejectOpening_when_theFirstCameraHasNoValidVenueFormat(final String format) {
+        final CameraRegistration first = new CameraRegistration(Camera.LEFT, 3, new RequestedVenue(format, null, null));
+
+        assertThatThrownBy(() -> UploadSession.open(SESSION_ID, EVENT_ID, first, BUCKET, OPENED_AT))
+                .isInstanceOfSatisfying(VenueSpecException.class,
+                        e -> assertThat(e.field()).isEqualTo("venue.format"));
     }
 
     @Test
@@ -137,10 +147,15 @@ class UploadSessionTest {
                 .isInstanceOf(CameraSetConflictException.class);
     }
 
-    @Test
-    void should_keepTheFirstVenueAndFlagTheIgnoredOne_when_aJoiningCameraSendsAVenue() {
+    // A later camera's venue is ignored whatever it holds: the format is only checked on the first camera
+    @ParameterizedTest(name = "format {0}, {1} x {2}")
+    @CsvSource(value = {"FUTSAL_5V5, NULL, NULL", "NULL, NULL, NULL", "HOCKEY, NULL, NULL", "NULL, 100, 60"},
+            nullValues = "NULL")
+    void should_keepTheFirstVenueAndFlagTheIgnoredOne_when_aJoiningCameraSendsAVenue(final String format,
+                                                                                    final Double lengthM,
+                                                                                    final Double widthM) {
         final UploadSession left = openedBy(Camera.LEFT);
-        final VenueSpec other = VenueSpec.of(VenueFormat.FUTSAL_5V5, null, null);
+        final RequestedVenue other = new RequestedVenue(format, lengthM, widthM);
 
         final RegistrationResult result = left.join(new CameraRegistration(Camera.RIGHT, 3, other), BUCKET, JOINED_AT);
 
@@ -186,11 +201,11 @@ class UploadSessionTest {
 
     @Test
     void should_rejectTheRegistration_when_partCountIsOutsideOneToAThousand() {
-        assertThatThrownBy(() -> new CameraRegistration(Camera.LEFT, 0, VENUE))
+        assertThatThrownBy(() -> new CameraRegistration(Camera.LEFT, 0, REQUESTED_VENUE))
                 .isInstanceOf(IllegalArgumentException.class);
-        assertThatThrownBy(() -> new CameraRegistration(Camera.LEFT, 1001, VENUE))
+        assertThatThrownBy(() -> new CameraRegistration(Camera.LEFT, 1001, REQUESTED_VENUE))
                 .isInstanceOf(IllegalArgumentException.class);
-        assertThat(new CameraRegistration(Camera.LEFT, 1, VENUE).partCount()).isEqualTo(1);
-        assertThat(new CameraRegistration(Camera.LEFT, 1000, VENUE).partCount()).isEqualTo(1000);
+        assertThat(new CameraRegistration(Camera.LEFT, 1, REQUESTED_VENUE).partCount()).isEqualTo(1);
+        assertThat(new CameraRegistration(Camera.LEFT, 1000, REQUESTED_VENUE).partCount()).isEqualTo(1000);
     }
 }

@@ -10,7 +10,7 @@ import org.cavalodetroia.ctr.domain.model.upload.ObjectKeys;
 import org.cavalodetroia.ctr.domain.model.upload.RegistrationResult;
 import org.cavalodetroia.ctr.domain.model.upload.UploadCamera;
 import org.cavalodetroia.ctr.domain.model.upload.UploadSession;
-import org.cavalodetroia.ctr.domain.model.venue.VenueSpec;
+import org.cavalodetroia.ctr.domain.model.venue.RequestedVenue;
 import org.springframework.stereotype.Component;
 
 import java.util.Comparator;
@@ -20,12 +20,14 @@ import java.util.List;
 public class UploadSessionConverter {
 
     /**
-     * @throws VenueSpecException when the venue has no format or only one of its measures
+     * The venue goes to the domain as sent: only the first camera's is used, and its format is checked there.
+     *
+     * @throws VenueSpecException when the venue has only one of its measures
      */
     public CameraRegistration toRegistration(final RegisterCameraRequest request) {
         final VenueRequest venue = request.venue();
         return new CameraRegistration(request.camera(), request.partCount(),
-                venue == null ? null : VenueSpec.of(venue.format(), venue.lengthM(), venue.widthM()));
+                venue == null ? null : new RequestedVenue(venue.format(), venue.lengthM(), venue.widthM()));
     }
 
     public RegisterCameraResponse toResponse(final RegistrationResult result) {

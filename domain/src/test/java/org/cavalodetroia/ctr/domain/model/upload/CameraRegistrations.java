@@ -1,5 +1,6 @@
 package org.cavalodetroia.ctr.domain.model.upload;
 
+import org.cavalodetroia.ctr.domain.model.venue.RequestedVenue;
 import org.cavalodetroia.ctr.domain.model.venue.VenueFormat;
 import org.cavalodetroia.ctr.domain.model.venue.VenueSpec;
 
@@ -17,7 +18,9 @@ public final class CameraRegistrations {
     public static final Instant OPENED_AT = Instant.parse("2026-11-05T10:00:00Z");
     public static final Instant JOINED_AT = Instant.parse("2026-11-05T10:05:00Z");
     public static final int PART_COUNT = 3;
-    public static final VenueSpec VENUE = VenueSpec.of(VenueFormat.FOOTBALL_11V11, 105.0, 68.0);
+    public static final RequestedVenue REQUESTED_VENUE = new RequestedVenue("FOOTBALL_11V11", 105.0, 68.0);
+    // The venue the session stores for REQUESTED_VENUE
+    public static final VenueSpec VENUE = new VenueSpec(VenueFormat.FOOTBALL_11V11, 105, 68);
 
     private CameraRegistrations() {
     }
@@ -26,7 +29,7 @@ public final class CameraRegistrations {
      * The first camera of a session, with the venue.
      */
     public static CameraRegistration first(final Camera camera) {
-        return new CameraRegistration(camera, PART_COUNT, VENUE);
+        return new CameraRegistration(camera, PART_COUNT, REQUESTED_VENUE);
     }
 
     /**

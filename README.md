@@ -39,7 +39,7 @@ venue; a second one joins it. A session ends with the cameras `SINGLE`, or `LEFT
   "partCount": 40,                  // 1..1000, the same for every camera of the session
   "contentType": "video/mp4",       // a video/* type
   "venue": {                        // required on the first camera, ignored (and logged) on later ones
-    "format": "FOOTBALL_11V11",     // FUTSAL_5V5 | FOOTBALL_7V7 | FOOTBALL_11V11
+    "format": "FOOTBALL_11V11",     // FUTSAL_5V5 | FOOTBALL_7V7 | FOOTBALL_11V11, checked on the first camera only
     "lengthM": 105,                 // both measures or neither; neither stores the standard of the format:
     "widthM": 68                    // 40 x 20, 65 x 45, 105 x 68 m
   }
@@ -70,7 +70,7 @@ Errors are `application/problem+json` with a `code`:
 
 | Status | `code` | When |
 |---|---|---|
-| 400 | `VALIDATION_FAILED` | A field breaks a rule above, or the first camera sends no venue; `errors` lists `{field, message}`. The body is checked before the event. |
+| 400 | `VALIDATION_FAILED` | A field breaks a rule above, or the first camera sends no venue; `errors` lists `{field, message}`. The body is checked before the event, except the venue format, which is checked when the first camera opens the session. |
 | 404 | `EVENT_NOT_FOUND` | ctr-service does not know the event |
 | 409 | `CAMERA_SET_CONFLICT` | The camera is already registered (with another `Idempotency-Key`), or doesn't fit: `SINGLE` with `LEFT`/`RIGHT` or the reverse |
 | 409 | `PART_COUNT_MISMATCH` | The second camera brings another `partCount` |
@@ -131,7 +131,7 @@ curl -i localhost:8080/api/v1/events/0b5c3c38-4a8e-4f53-8c0e-5b0b8d8f2a11/upload
 
 `register_camera.feature` registers cameras over HTTP and checks the response, the rows in Postgres and the log lines
 of the request (LEFT then RIGHT, SINGLE alone, each 409, the replayed `Idempotency-Key`, standard venue dimensions,
-404, 400, and the correlation id). `openapi.feature` checks what `/v3/api-docs` says about the endpoint.
+a later camera's venue ignored whatever it holds, 404, 400, and the correlation id). `openapi.feature` checks what `/v3/api-docs` says about the endpoint.
 `schema.feature` checks that Liquibase applied every changeset to the empty
 database (tables, primary and foreign keys, the one-open-session index), that running the changelog again applies
 nothing, and that an event can't have two open upload sessions. After a run, the report is at

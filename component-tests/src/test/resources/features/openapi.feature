@@ -7,6 +7,7 @@ Feature: OpenAPI description
     Then it describes POST "/api/v1/events/{eventId}/upload-session/cameras"
     And the operation takes the headers "Idempotency-Key, X-Correlation-Id"
     And the operation takes a "RegisterCameraRequest" and answers 201 with a "RegisterCameraResponse"
+    And the venue format is one of "FUTSAL_5V5, FOOTBALL_7V7, FOOTBALL_11V11"
     And the operation answers these statuses, each with the X-Correlation-Id header
       | status | codes                                    |
       | 201    |                                          |

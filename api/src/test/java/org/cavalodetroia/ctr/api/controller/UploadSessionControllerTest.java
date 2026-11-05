@@ -3,6 +3,7 @@ package org.cavalodetroia.ctr.api.controller;
 import org.cavalodetroia.ctr.api.converter.UploadSessionConverter;
 import org.cavalodetroia.ctr.api.idempotency.IdempotentRequests;
 import org.cavalodetroia.ctr.domain.model.idempotency.StoredResponse;
+import org.cavalodetroia.ctr.domain.model.upload.CameraRegistration;
 import org.cavalodetroia.ctr.domain.port.in.RegisterCamera;
 import org.cavalodetroia.ctr.domain.port.out.IdempotencyStore;
 import org.junit.jupiter.api.Test;
@@ -36,7 +37,7 @@ import static org.mockito.Mockito.when;
 
 /**
  * AC-1, AC-2: the 201 body; AC-6: each validation rule gives 400 VALIDATION_FAILED naming the field, before the
- * event is looked up; AC-7: a repeat with the same Idempotency-Key and body replays the stored response.
+ * event is looked up, except the venue format, which only the first camera must get right (checked in the domain); AC-7: a repeat with the same Idempotency-Key and body replays the stored response.
  */
 @WebMvcTest(UploadSessionController.class)
 @Import({UploadSessionConverter.class, IdempotentRequests.class})
@@ -98,8 +99,6 @@ class UploadSessionControllerTest {
             camera unknown             | camera        | {"camera": "FRONT", "partCount": 40, "contentType": "video/mp4"}
             contentType not video      | contentType   | {"camera": "LEFT", "partCount": 40, "contentType": "application/octet-stream"}
             contentType missing        | contentType   | {"camera": "LEFT", "partCount": 40}
-            venue format unknown       | venue.format  | {"camera": "LEFT", "partCount": 40, "contentType": "video/mp4", "venue": {"format": "HOCKEY"}}
-            venue format missing       | venue.format  | {"camera": "LEFT", "partCount": 40, "contentType": "video/mp4", "venue": {}}
             venue length not positive  | venue.lengthM | {"camera": "LEFT", "partCount": 40, "contentType": "video/mp4", "venue": {"format": "FUTSAL_5V5", "lengthM": -40, "widthM": 20}}
             venue width without length | venue.lengthM | {"camera": "LEFT", "partCount": 40, "contentType": "video/mp4", "venue": {"format": "FUTSAL_5V5", "widthM": 20}}
             venue length without width | venue.widthM  | {"camera": "LEFT", "partCount": 40, "contentType": "video/mp4", "venue": {"format": "FUTSAL_5V5", "lengthM": 40}}
@@ -113,6 +112,26 @@ class UploadSessionControllerTest {
         assertThat(result).bodyJson().extractingPath("$.code").isEqualTo("VALIDATION_FAILED");
         assertThat(result).bodyJson().extractingPath("$.errors[*].field").asArray().containsExactly(field);
         verifyNoInteractions(registerCamera);
+    }
+
+    // The format is only checked when the camera opens the session (UploadSession.open), not at the edge
+    @ParameterizedTest(name = "{0}")
+    @CsvSource(delimiter = '|', textBlock = """
+            no format      | {}                                 | ''
+            unknown format | {"format": "HOCKEY"}               | HOCKEY
+            measures only  | {"lengthM": 100, "widthM": 60}     | ''
+            """)
+    void should_passTheVenueAsSentToTheDomain_when_itsFormatIsMissingOrUnknown(final String rule,
+                                                                             final String venue,
+                                                                             final String format) {
+        when(registerCamera.register(eq(EVENT_ID), any())).thenReturn(rightJoinedLeft());
+
+        assertThat(post("""
+                {"camera": "RIGHT", "partCount": 40, "contentType": "video/mp4", "venue": %s}""".formatted(venue), null))
+                .hasStatus(HttpStatus.CREATED);
+        final ArgumentCaptor<CameraRegistration> registration = ArgumentCaptor.forClass(CameraRegistration.class);
+        verify(registerCamera).register(eq(EVENT_ID), registration.capture());
+        assertThat(registration.getValue().venue().format()).isEqualTo(format.isEmpty() ? null : format);
     }
 
     @Test

@@ -13,6 +13,7 @@ import org.springframework.boot.test.web.server.LocalServerPort;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.client.RestClient;
+import tools.jackson.core.type.TypeReference;
 import tools.jackson.databind.json.JsonMapper;
 
 import java.util.Arrays;
@@ -42,6 +43,7 @@ public class RegisterCameraSteps {
     private static final String CORRELATION_ID = "X-Correlation-Id";
     private static final String IDEMPOTENCY_KEY_HEADER = "Idempotency-Key";
     private static final String OUR_LOGGERS = "org.cavalodetroia.ctr.";
+    private static final TypeReference<Map<String, Object>> MAP_OF_FIELDS = new TypeReference<>() { };
 
     private final RestClient http;
     private final DSLContext dsl;
@@ -104,6 +106,11 @@ public class RegisterCameraSteps {
     @When("the {word} camera registers with {int} parts on a {word} venue without measures")
     public void theCameraRegistersOnAnUnmeasuredVenue(final String camera, final int partCount, final String format) {
         register(camera, partCount, Map.of("format", format));
+    }
+
+    @When("the {word} camera registers with {int} parts and the venue {string}")
+    public void theCameraRegistersWithTheVenue(final String camera, final int partCount, final String venue) {
+        register(camera, partCount, JsonMapper.shared().readValue(venue, MAP_OF_FIELDS));
     }
 
     @When("the {word} camera registers with {int} parts and no venue")

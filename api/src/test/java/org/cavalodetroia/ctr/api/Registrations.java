@@ -4,8 +4,7 @@ import org.cavalodetroia.ctr.domain.model.upload.Camera;
 import org.cavalodetroia.ctr.domain.model.upload.CameraRegistration;
 import org.cavalodetroia.ctr.domain.model.upload.RegistrationResult;
 import org.cavalodetroia.ctr.domain.model.upload.UploadSession;
-import org.cavalodetroia.ctr.domain.model.venue.VenueFormat;
-import org.cavalodetroia.ctr.domain.model.venue.VenueSpec;
+import org.cavalodetroia.ctr.domain.model.venue.RequestedVenue;
 
 import java.time.Instant;
 import java.util.UUID;
@@ -26,7 +25,7 @@ public final class Registrations {
 
     public static RegistrationResult leftOpened() {
         return UploadSession.open(SESSION_ID, EVENT_ID,
-                new CameraRegistration(Camera.LEFT, PART_COUNT, VenueSpec.of(VenueFormat.FOOTBALL_11V11, null, null)),
+                new CameraRegistration(Camera.LEFT, PART_COUNT, new RequestedVenue("FOOTBALL_11V11", null, null)),
                 BUCKET, NOW);
     }
 
