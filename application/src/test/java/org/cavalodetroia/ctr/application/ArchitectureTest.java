@@ -5,6 +5,7 @@ import com.tngtech.archunit.junit.AnalyzeClasses;
 import com.tngtech.archunit.junit.ArchTest;
 import com.tngtech.archunit.lang.ArchRule;
 
+import static com.tngtech.archunit.lang.syntax.ArchRuleDefinition.classes;
 import static com.tngtech.archunit.lang.syntax.ArchRuleDefinition.noClasses;
 import static com.tngtech.archunit.library.Architectures.layeredArchitecture;
 import static com.tngtech.archunit.library.dependencies.SlicesRuleDefinition.slices;
@@ -36,4 +37,15 @@ class ArchitectureTest {
     static final ArchRule NO_CYCLES = slices()
             .matching("org.cavalodetroia.ctr.(*)..")
             .should().beFreeOfCycles();
+
+    // Packages say what kind of class lives in them (see CLAUDE.md, "Packages"), so the names must agree
+    @ArchTest
+    static final ArchRule CONTROLLERS_ARE_NAMED_CONTROLLER = classes()
+            .that().resideInAPackage("org.cavalodetroia.ctr..controller..")
+            .should().haveSimpleNameEndingWith("Controller");
+
+    @ArchTest
+    static final ArchRule CONVERTERS_ARE_NAMED_CONVERTER = classes()
+            .that().resideInAPackage("org.cavalodetroia.ctr..converter..")
+            .should().haveSimpleNameEndingWith("Converter");
 }

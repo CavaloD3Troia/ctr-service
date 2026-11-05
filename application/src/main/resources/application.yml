@@ -17,6 +17,11 @@ spring:
     problemdetails:
       enabled: true
 
+ctr:
+  storage:
+    # The S3 bucket cameras upload their clips to (StorageProperties)
+    bucket: ${CTR_STORAGE_BUCKET:cdt-videos}
+
 # One JSON object per line, with the MDC (correlation_id, session_id, camera…) as top-level fields
 logging:
   structured:
