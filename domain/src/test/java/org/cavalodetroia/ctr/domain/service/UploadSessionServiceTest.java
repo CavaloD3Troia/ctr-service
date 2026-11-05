@@ -8,6 +8,7 @@ import org.cavalodetroia.ctr.domain.model.upload.Camera;
 import org.cavalodetroia.ctr.domain.model.upload.RegistrationResult;
 import org.cavalodetroia.ctr.domain.model.upload.UploadCamera;
 import org.cavalodetroia.ctr.domain.model.upload.UploadSession;
+import org.cavalodetroia.ctr.domain.port.out.ClipStorage;
 import org.cavalodetroia.ctr.domain.port.out.EventRepository;
 import org.cavalodetroia.ctr.domain.port.out.UploadSessionRepository;
 import org.junit.jupiter.api.Test;
@@ -50,8 +51,11 @@ class UploadSessionServiceTest {
     @Mock
     private UploadSessionRepository sessions;
 
+    @Mock
+    private ClipStorage storage;
+
     private UploadSessionService service() {
-        return new UploadSessionService(events, sessions, CLOCK, BUCKET);
+        return new UploadSessionService(events, sessions, storage, CLOCK, BUCKET);
     }
 
     @Test
