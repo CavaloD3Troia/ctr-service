@@ -44,7 +44,7 @@ up: package deps-up ## Build the app and start it in Docker together with Postgr
 
 .PHONY: run
 run: package ## Run the app on this machine, against `make deps-up`
-	java -jar $(APP_JAR)
+	java -jar $(APP_JAR) --spring.profiles.active=dev
 
 .PHONY: logs
 logs: ## Follow the app logs

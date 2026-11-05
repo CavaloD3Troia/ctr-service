@@ -92,6 +92,7 @@ services:
       minio-init:
         condition: service_completed_successfully
     environment:
+      SPRING_PROFILES_ACTIVE: dev
       DB_URL: jdbc:postgresql://postgres:5432/ctr
       KAFKA_BOOTSTRAP_SERVERS: kafka:29092
       S3_ENDPOINT: http://minio:9000
