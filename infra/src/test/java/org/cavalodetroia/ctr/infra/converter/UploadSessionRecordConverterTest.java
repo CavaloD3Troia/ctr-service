@@ -2,10 +2,14 @@ package org.cavalodetroia.ctr.infra.converter;
 
 import org.cavalodetroia.ctr.domain.model.upload.Camera;
 import org.cavalodetroia.ctr.domain.model.upload.CameraRegistration;
-import org.cavalodetroia.ctr.domain.model.upload.ClipStatus;
+import org.cavalodetroia.ctr.domain.model.upload.ClipConfirmation;
+import org.cavalodetroia.ctr.domain.model.upload.PartStatus;
 import org.cavalodetroia.ctr.domain.model.upload.UploadClip;
+import org.cavalodetroia.ctr.domain.model.upload.UploadPart;
 import org.cavalodetroia.ctr.domain.model.upload.UploadSession;
+import org.cavalodetroia.ctr.domain.model.upload.Window;
 import org.cavalodetroia.ctr.domain.model.venue.RequestedVenue;
+import org.cavalodetroia.ctr.infra.persistence.jooq.tables.records.UploadPartRecord;
 import org.cavalodetroia.ctr.infra.persistence.jooq.tables.records.UploadSessionRecord;
 import org.junit.jupiter.api.Test;
 
@@ -17,7 +21,8 @@ import java.util.UUID;
 import static org.assertj.core.api.Assertions.assertThat;
 
 /**
- * AC-3, AC-4: the rows a session is stored as, and back.
+ * The rows a session is stored as, and back (TH-137 AC-3, AC-4); with the confirmed clips and closed parts of
+ * TH-142 (AC-1, AC-2).
  */
 class UploadSessionRecordConverterTest {
 
@@ -25,6 +30,9 @@ class UploadSessionRecordConverterTest {
     private static final UUID SESSION_ID = UUID.fromString("019a5b2e-7f3c-7000-8000-000000000001");
     private static final Instant OPENED_AT = Instant.parse("2026-11-05T10:00:00Z");
     private static final Instant JOINED_AT = Instant.parse("2026-11-05T10:05:00.123456Z");
+    private static final Instant UPLOADED_AT = Instant.parse("2026-11-05T11:00:00.654321Z");
+    private static final ClipConfirmation CONFIRMATION =
+            new ClipConfirmation(1_073_741_824L, "9b2cf535f27731c974343645a3985328", 900_000, 300_000);
 
     private final UploadSessionRecordConverter converter = new UploadSessionRecordConverter();
 
@@ -46,7 +54,7 @@ class UploadSessionRecordConverterTest {
 
     @Test
     void should_storeTheClipKeyAndStatus_when_convertingAClip() {
-        final UploadClip clip = new UploadClip(Camera.LEFT, 39, "events/e/sessions/s/LEFT/39.mp4", ClipStatus.PENDING);
+        final UploadClip clip = UploadClip.pending(Camera.LEFT, 39, "events/e/sessions/s/LEFT/39.mp4");
 
         final var record = converter.toRecord(SESSION_ID, clip);
 
@@ -55,6 +63,59 @@ class UploadSessionRecordConverterTest {
         assertThat(record.getPartIndex()).isEqualTo(39);
         assertThat(record.getObjectKey()).isEqualTo("events/e/sessions/s/LEFT/39.mp4");
         assertThat(record.getStatus()).isEqualTo("PENDING");
+        assertThat(record.getSizeBytes()).isNull();
+        assertThat(record.getEtag()).isNull();
+        assertThat(record.getStartMs()).isNull();
+        assertThat(record.getDurationMs()).isNull();
+        assertThat(record.getUploadedAt()).isNull();
+    }
+
+    @Test
+    void should_storeTheConfirmationAndTheUploadTime_when_convertingAnUploadedClip() {
+        final UploadClip clip = UploadClip.pending(Camera.LEFT, 3, "events/e/sessions/s/LEFT/3.mp4")
+                .uploaded(CONFIRMATION, UPLOADED_AT);
+
+        final var record = converter.toRecord(SESSION_ID, clip);
+
+        assertThat(record.getStatus()).isEqualTo("UPLOADED");
+        assertThat(record.getSizeBytes()).isEqualTo(1_073_741_824L);
+        assertThat(record.getEtag()).isEqualTo("9b2cf535f27731c974343645a3985328");
+        assertThat(record.getStartMs()).isEqualTo(900_000L);
+        assertThat(record.getDurationMs()).isEqualTo(300_000L);
+        assertThat(record.getUploadedAt()).isEqualTo(UPLOADED_AT.atOffset(ZoneOffset.UTC));
+    }
+
+    @Test
+    void should_storeTheWindow_when_convertingAClosedPart() {
+        final UploadPart part = new UploadPart(3, PartStatus.NO_OVERLAP, new Window(300_000, 0), null);
+
+        final UploadPartRecord record = converter.toRecord(SESSION_ID, part);
+
+        assertThat(record.getStatus()).isEqualTo("NO_OVERLAP");
+        assertThat(record.getStartMs()).isEqualTo(300_000L);
+        assertThat(record.getDurationMs()).isZero();
+        assertThat(record.getPublishedAt()).isNull();
+    }
+
+    @Test
+    void should_giveBackTheSameSession_when_roundTrippingASessionWithUploadedClipsAndClosedParts() {
+        final UploadSession left = leftThenRight(new RequestedVenue("FOOTBALL_11V11", null, null))
+                .completeClip(Camera.LEFT, 0, CONFIRMATION, UPLOADED_AT).after();
+        final UploadSession session = left.completeClip(Camera.RIGHT, 0, CONFIRMATION, UPLOADED_AT).after();
+        final UploadPart published = new UploadPart(0, PartStatus.COMPLETE, new Window(900_000, 300_000),
+                UPLOADED_AT.plusSeconds(1));
+
+        assertThat(roundTrip(session)).isEqualTo(session);
+        assertThat(converter.toRecord(SESSION_ID, published).getPublishedAt())
+                .isEqualTo(UPLOADED_AT.plusSeconds(1).atOffset(ZoneOffset.UTC));
+    }
+
+    private UploadSession roundTrip(final UploadSession session) {
+        return converter.toDomain(
+                converter.toRecord(session),
+                session.cameras().stream().map(camera -> converter.toRecord(SESSION_ID, camera)).toList(),
+                session.clips().stream().map(clip -> converter.toRecord(SESSION_ID, clip)).toList(),
+                session.parts().stream().map(part -> converter.toRecord(SESSION_ID, part)).toList());
     }
 
     @Test

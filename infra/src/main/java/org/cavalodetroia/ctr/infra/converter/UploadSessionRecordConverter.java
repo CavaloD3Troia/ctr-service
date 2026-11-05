@@ -1,6 +1,7 @@
 package org.cavalodetroia.ctr.infra.converter;
 
 import org.cavalodetroia.ctr.domain.model.upload.Camera;
+import org.cavalodetroia.ctr.domain.model.upload.ClipConfirmation;
 import org.cavalodetroia.ctr.domain.model.upload.ClipStatus;
 import org.cavalodetroia.ctr.domain.model.upload.PartStatus;
 import org.cavalodetroia.ctr.domain.model.upload.SessionStatus;
@@ -8,6 +9,7 @@ import org.cavalodetroia.ctr.domain.model.upload.UploadCamera;
 import org.cavalodetroia.ctr.domain.model.upload.UploadClip;
 import org.cavalodetroia.ctr.domain.model.upload.UploadPart;
 import org.cavalodetroia.ctr.domain.model.upload.UploadSession;
+import org.cavalodetroia.ctr.domain.model.upload.Window;
 import org.cavalodetroia.ctr.domain.model.venue.VenueFormat;
 import org.cavalodetroia.ctr.domain.model.venue.VenueSpec;
 import org.cavalodetroia.ctr.infra.persistence.jooq.tables.records.UploadCameraRecord;
@@ -24,7 +26,8 @@ import java.util.UUID;
 
 /**
  * An upload session and the rows of {@code upload_session}, {@code upload_camera}, {@code upload_clip} and
- * {@code upload_part}. The venue measures are {@code REAL} columns, so they keep float precision.
+ * {@code upload_part}. The venue measures are {@code REAL} columns, so they keep float precision. A pending clip and
+ * a waiting part leave their nullable columns empty.
  */
 @Component
 public class UploadSessionRecordConverter {
@@ -60,6 +63,14 @@ public class UploadSessionRecordConverter {
         record.setPartIndex(clip.partIndex());
         record.setObjectKey(clip.objectKey());
         record.setStatus(clip.status().name());
+        final ClipConfirmation confirmation = clip.confirmation();
+        if (confirmation != null) {
+            record.setSizeBytes(confirmation.sizeBytes());
+            record.setEtag(confirmation.etag());
+            record.setStartMs(confirmation.startMs());
+            record.setDurationMs(confirmation.durationMs());
+            record.setUploadedAt(toOffsetDateTime(clip.uploadedAt()));
+        }
         return record;
     }
 
@@ -68,6 +79,13 @@ public class UploadSessionRecordConverter {
         record.setSessionId(sessionId);
         record.setPartIndex(part.partIndex());
         record.setStatus(part.status().name());
+        if (part.window() != null) {
+            record.setStartMs(part.window().startMs());
+            record.setDurationMs(part.window().durationMs());
+        }
+        if (part.publishedAt() != null) {
+            record.setPublishedAt(toOffsetDateTime(part.publishedAt()));
+        }
         return record;
     }
 
@@ -96,12 +114,24 @@ public class UploadSessionRecordConverter {
     }
 
     private static UploadClip toDomain(final UploadClipRecord clip) {
-        return new UploadClip(Camera.valueOf(clip.getCamera()), clip.getPartIndex(), clip.getObjectKey(),
-                ClipStatus.valueOf(clip.getStatus()));
+        final ClipStatus status = ClipStatus.valueOf(clip.getStatus());
+        final ClipConfirmation confirmation = status == ClipStatus.UPLOADED
+                ? new ClipConfirmation(clip.getSizeBytes(), clip.getEtag(), clip.getStartMs(), clip.getDurationMs())
+                : null;
+        return new UploadClip(Camera.valueOf(clip.getCamera()), clip.getPartIndex(), clip.getObjectKey(), status,
+                confirmation, toInstant(clip.getUploadedAt()));
     }
 
     private static UploadPart toDomain(final UploadPartRecord part) {
-        return new UploadPart(part.getPartIndex(), PartStatus.valueOf(part.getStatus()));
+        final Window window = part.getStartMs() == null
+                ? null
+                : new Window(part.getStartMs(), part.getDurationMs());
+        return new UploadPart(part.getPartIndex(), PartStatus.valueOf(part.getStatus()), window,
+                toInstant(part.getPublishedAt()));
+    }
+
+    private static Instant toInstant(final OffsetDateTime time) {
+        return time == null ? null : time.toInstant();
     }
 
     private static OffsetDateTime toOffsetDateTime(final Instant instant) {
