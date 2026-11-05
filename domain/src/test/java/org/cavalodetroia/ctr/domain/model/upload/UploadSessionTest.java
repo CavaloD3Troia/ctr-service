@@ -53,9 +53,9 @@ class UploadSessionTest {
                         tuple(Camera.LEFT, 1, KEY_PREFIX + "LEFT/1.mp4", ClipStatus.PENDING),
                         tuple(Camera.LEFT, 2, KEY_PREFIX + "LEFT/2.mp4", ClipStatus.PENDING));
         assertThat(session.parts()).containsExactly(
-                new UploadPart(0, PartStatus.WAITING),
-                new UploadPart(1, PartStatus.WAITING),
-                new UploadPart(2, PartStatus.WAITING));
+                UploadPart.waiting(0),
+                UploadPart.waiting(1),
+                UploadPart.waiting(2));
         assertThat(result.venueIgnored()).isFalse();
         assertThat(session.version()).isZero();
     }
@@ -202,7 +202,7 @@ class UploadSessionTest {
         for (final UploadClip clip : open.clips()) {
             final boolean isUploaded = clip.camera() == Camera.LEFT
                     && List.of(uploaded.split(",")).contains(String.valueOf(clip.partIndex()));
-            clips.add(isUploaded ? new UploadClip(clip.camera(), clip.partIndex(), clip.objectKey(), ClipStatus.UPLOADED)
+            clips.add(isUploaded ? clip.uploaded(ClipConfirmations.confirmation(), ClipConfirmations.UPLOADED_AT)
                     : clip);
         }
         final UploadSession session = new UploadSession(open.id(), open.eventId(), open.status(), open.venue(),
