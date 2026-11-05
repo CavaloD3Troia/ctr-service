@@ -1,0 +1,18 @@
+# Local development: the IDE run configuration (.run/), `make run` and `make up`. The defaults point at the
+# dependencies started by `docker compose up -d`, so the app runs from the IDE as is; the container (`make up`)
+# overrides them through the environment variables in docker-compose.yml.
+spring:
+  datasource:
+    url: ${DB_URL:jdbc:postgresql://localhost:5432/ctr}
+    username: ${DB_USERNAME:ctr}
+    password: ${DB_PASSWORD:ctr}
+
+ctr:
+  # Where cameras upload their clips, and how ctr-service reaches it to check them (StorageProperties): the MinIO of
+  # docker-compose.yml, with the bucket minio-init creates
+  storage:
+    bucket: ${CTR_STORAGE_BUCKET:cdt-videos}
+    endpoint: ${S3_ENDPOINT:http://localhost:9000}
+    region: ${S3_REGION:us-east-1}
+    access-key: ${S3_ACCESS_KEY:minioadmin}
+    secret-key: ${S3_SECRET_KEY:minioadmin}

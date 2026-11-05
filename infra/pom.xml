@@ -71,6 +71,11 @@
 
     <build>
         <plugins>
+            <!-- 80% line coverage from the unit tests (configured in the root pom; the generated jOOQ classes are excluded) -->
+            <plugin>
+                <groupId>org.jacoco</groupId>
+                <artifactId>jacoco-maven-plugin</artifactId>
+            </plugin>
             <!-- Generates the jOOQ table classes from the Liquibase changesets (formatted SQL), so the build needs no
                  database. parseIgnoreComments lets a Postgres-only statement the parser rejects sit between the
                  "[jooq ignore start]" and "[jooq ignore stop]" SQL comments -->

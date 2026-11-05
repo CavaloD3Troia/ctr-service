@@ -1,0 +1,11 @@
+# Automated tests. Postgres, Kafka and MinIO run in Testcontainers, and the tests hand the app their addresses and
+# credentials themselves (@DynamicPropertySource), so no connection is set here: only what no container decides.
+logging:
+  level:
+    org.apache.kafka: WARN
+
+ctr:
+  storage:
+    # The bucket the tests create in the MinIO container, and a region MinIO accepts
+    bucket: cdt-videos
+    region: us-east-1

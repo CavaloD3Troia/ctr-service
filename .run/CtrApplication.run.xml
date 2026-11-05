@@ -2,6 +2,9 @@
   <configuration default="false" name="CtrApplication" type="Application" factoryName="Application">
     <option name="MAIN_CLASS_NAME" value="org.cavalodetroia.ctr.application.CtrApplication" />
     <module name="ctr-application" />
+    <envs>
+      <env name="SPRING_PROFILES_ACTIVE" value="dev" />
+    </envs>
     <method v="2">
       <option name="Make" enabled="true" />
     </method>

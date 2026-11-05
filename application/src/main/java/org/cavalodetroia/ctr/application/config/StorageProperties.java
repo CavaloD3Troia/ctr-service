@@ -4,7 +4,8 @@ import org.springframework.boot.context.properties.ConfigurationProperties;
 
 /**
  * Where the cameras upload their clips, and how ctr-service reaches it to check them ({@code ctr.storage.*}). The
- * defaults in {@code application.yml} point at the MinIO of {@code docker-compose.yml}.
+ * defaults in {@code application-dev.yml} point at the MinIO of {@code docker-compose.yml}; {@code application-prod.yml}
+ * has none.
  *
  * @param bucket    the S3 bucket, {@code CTR_STORAGE_BUCKET}; {@code cdt-videos} by default
  * @param endpoint  where S3 is, {@code S3_ENDPOINT}, for example {@code http://localhost:9000} for MinIO; empty for

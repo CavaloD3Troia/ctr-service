@@ -1,0 +1,16 @@
+# Deployed environments. No defaults on purpose: a missing variable stops the app at startup instead of letting it
+# look for a database or a bucket on localhost. Credentials come from the platform's secret store.
+spring:
+  datasource:
+    url: ${DB_URL}
+    username: ${DB_USERNAME}
+    password: ${DB_PASSWORD}
+
+ctr:
+  storage:
+    bucket: ${CTR_STORAGE_BUCKET}
+    # Set it to an empty value on AWS, which then finds the endpoint from the region
+    endpoint: ${S3_ENDPOINT}
+    region: ${S3_REGION}
+    access-key: ${S3_ACCESS_KEY}
+    secret-key: ${S3_SECRET_KEY}

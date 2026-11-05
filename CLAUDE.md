@@ -17,9 +17,10 @@ The patterns come from the `kafka-rest-service` blueprint (skill of the same nam
 ## Commands
 
 ```sh
-make build            # clean verify: unit + ArchUnit tests
+make build            # clean verify: unit + ArchUnit tests, and the 80% line-coverage gate
+make integration-test # + the *IT tests of application (Testcontainers, needs Docker)
 make component-test   # + Cucumber against the whole app (Testcontainers, needs Docker)
-make deps-up          # Postgres + Kafka + MinIO (with the bucket) only, then run CtrApplication from the IDE (.run/)
+make deps-up          # Postgres + Kafka + MinIO (with the bucket) only, then run CtrApplication from the IDE (.run/, profile dev)
 make up / logs / down # the app in Docker too
 ```
 
@@ -33,10 +34,30 @@ The contracts jar must be in `~/.m2`: a GitHub Packages `read:packages` token, o
 | `domain` | Records, domain services, ports: `port/in` (use cases), `port/out` (what infra implements), domain exceptions | Depend on anything but the JDK: no Spring, no Kafka, no jOOQ, no annotations |
 | `api` | Controllers, request/response records, converters, the error handler | Call infra or repositories; hold business rules |
 | `infra` | jOOQ repositories, Kafka publishers/listeners, serdes, converters, migrations | Import `api` or `application`; let a driver exception reach the domain |
-| `application` | `CtrApplication`, `wiring/` (builds domain services with `new`), `application.yml` | Contain business logic |
+| `application` | `CtrApplication`, `wiring/` (builds domain services with `new`), `application.yml` plus `application-{dev,test,prod}.yml` | Contain business logic |
 | `component-tests` | Cucumber, black box | Reach into internals beyond what a scenario must observe |
 
-- `ArchitectureTest` enforces this. Never weaken a rule to make code compile; move the code.
+- `ArchitectureRulesTest` enforces this with the rules of `HexagonalRules` (both in
+  `application/src/test/java/org/cavalodetroia/ctr/application/architecture`). Never weaken a rule to make code
+  compile; move the code. The rules:
+  - `LAYERS`: dependencies point inward. Nothing uses `application`; `api` and `infra` are used by `application` only.
+  - `DOMAIN_DEPENDS_ONLY_ON_THE_JDK`: `domain` references `java..` and itself, nothing else.
+  - `NO_CYCLES`: no cycles between the top-level packages, a package that is not one of the four layers included.
+  - `API_HAS_NO_PERSISTENCE_OR_MESSAGING_TYPES`: no jOOQ, JDBC, Kafka, protobuf or contract types in `api`.
+  - `INFRA_HAS_NO_WEB_TYPES`: no Spring MVC annotations or servlet types in `infra` (Spring's HTTP client is fine).
+  - `ENTRY_POINTS_LIVE_IN_THEIR_PACKAGE`: `@RestController` and `@Controller` only in `api/controller`,
+    `@RestControllerAdvice` and `@ControllerAdvice` only in `api/error`, `@KafkaListener` only in
+    `infra/kafka/listener`.
+  - `APPLICATION_HOLDS_NO_ADAPTER_CODE`: no jOOQ, JDBC, Kafka, protobuf or contract types in `application`. It wires
+    adapters to ports; it does not adapt.
+  - `INFRA_ADAPTERS_ARE_INDEPENDENT`: `infra/repository`, `infra/kafka`, `infra/storage` and `infra/outbox` never
+    reference each other. What two adapters share belongs in the domain, behind a port, or in `infra/converter`.
+  - `CONTROLLERS_ARE_NAMED_CONTROLLER` and `CONVERTERS_ARE_NAMED_CONVERTER`: a class in a `controller` package ends
+    in `Controller`, one in a `converter` package in `Converter`.
+- Every rule has a fixture that breaks it under `application/src/test/java/org/cavalodetroia/ctr/archfixtures` (one
+  sub-folder per layer, one minimal wrong class per rule, plus a clean resident per layer and per named package).
+  `ArchitectureRulesTest` proves each rule rejects its fixture and that no other rule does. A new rule comes with its
+  fixture.
 - Ports are named for the capability (`UploadSessionRepository`, `IdempotencyStore`), adapters for the technology
   (`JooqUploadSessionRepository`, `JooqIdempotencyStore`).
 - Domain services get no annotations; add a `@Bean` per service in `application/wiring/<Feature>Wiring`.
@@ -50,8 +71,6 @@ The contracts jar must be in `~/.m2`: a GitHub Packages `read:packages` token, o
     `kafka/config`, `storage`, `outbox`, `domain/<concept>` for infra-only records.
   - `application`: `config` (properties records), `wiring`, `health`, `scheduling`.
   - `component-tests`: `features`, `steps`, `support`.
-  - `ArchitectureTest` checks that classes in `..controller..` end in `Controller` and in `..converter..` in
-    `Converter`.
 
 ## Conventions
 
@@ -70,6 +89,10 @@ The contracts jar must be in `~/.m2`: a GitHub Packages `read:packages` token, o
   bridges to the same logs and MDC.
 - Configuration: one `@ConfigurationProperties` record per concern in `application/config`, bound by prefix
   (`StorageProperties` for `ctr.storage`). No `@Value`.
+- Profiles: `application.yml` holds what every profile shares. `application-dev.yml` defaults to `docker-compose.yml`,
+  `application-test.yml` leaves the connections to Testcontainers, and `application-prod.yml` reads environment
+  variables with no defaults. The app needs an active profile; without one it does not start. A new setting goes into
+  the three profile files, and prod never gets a default (`ProfilesTest` checks).
 
 ## REST
 
@@ -182,15 +205,21 @@ of the entity whose ordering matters (`event_id`).
 
 ## Testing
 
-| You changed… | Tier | Where |
-|---|---|---|
-| Domain logic, converter, validation | Unit `*Test`: no Spring context, mock ports only | the module's `src/test` |
-| Repository query, migration, serde, Kafka listener/publisher wiring | Integration `*IT`: Testcontainers or MockMvc | the module (tier not set up yet; add a failsafe profile when the first one comes) |
-| Endpoint, request/response shape, outbound message | Component: Cucumber | `component-tests/src/test/resources/features` |
+| You changed… | Tier | Where | Command |
+|---|---|---|---|
+| Domain logic, converter, validation, the statements a repository sends | Unit `*Test`: no Spring context, mock ports only (jOOQ's `MockConnection` for a repository, see `infra/.../repository/MockPostgres`) | the module's `src/test` | `make build`, with the architecture rules |
+| Startup, repository query, migration, serde, Kafka listener/publisher wiring | Integration `*IT`: Testcontainers or MockMvc | the module's `src/test`; failsafe runs them with `-Pintegration-tests` (bound in `application`; another module binds the plugin the same way) | `make integration-test` |
+| Endpoint, request/response shape, outbound message | Component: Cucumber | `component-tests/src/test/resources/features` | `make component-test` |
 
 - Names `should_<expected>_when_<condition>`, AssertJ only, Mockito for ports only. Fixtures are ObjectMother
   builders with sensible defaults.
 - Every serializer has a `null` (tombstone) test; every two-way converter has a round-trip test.
+- **Coverage gate.** JaCoCo fails `make build` when the unit tests cover less than **80% of the lines** of `domain`,
+  `api` or `infra` (per module, `BUNDLE`/`LINE`, configured in the root `pom.xml` and bound in each of the three).
+  Reports: `<module>/target/site/jacoco/index.html`. Excluded: the generated jOOQ classes and `CtrApplication`,
+  nothing else; `application` (covered by `CtrApplicationIT`) and `component-tests` are not gated. Never lower the
+  threshold or widen the exclusions to pass: add the unit test. A run that selects no tests in a module
+  (`-Dtest=...`) writes no coverage data and the check has nothing to measure there; only `make build` is the gate.
 - A component scenario asserts **both** sides: the HTTP response and what landed in Postgres or Kafka. Log lines
   and their MDC are read through `support/LogCapture`.
 - Component-test flakes to avoid:
@@ -198,8 +227,8 @@ of the entity whose ordering matters (`event_id`).
   - Before a step that depends on consumed state, wait until the service has consumed the message.
   - Keep scenario state in the step class or a `@ScenarioScope` bean, and use `pollInSameThread()` when the
     assertion touches one.
-- Containers are created once, in `component-tests/.../config/Containers`, with the same images as
-  `docker-compose.yml`. Keep the two in step.
+- Containers are created once, in `component-tests/.../config/Containers` (and in each `*IT`), with the same images as
+  `docker-compose.yml`. Keep them in step.
 
 ## Adding a field end to end
 
@@ -224,5 +253,4 @@ Left out of the first slice on purpose. Each item gets built, following this fil
 - OpenTelemetry tracing
 - auth
 - purging `idempotency_key` rows older than 24 hours (they are ignored, not deleted)
-- the integration-test tier
 - CI (it needs package access to fetch the contracts)
