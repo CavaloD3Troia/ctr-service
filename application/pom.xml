@@ -14,6 +14,11 @@
     <name>ctr-application</name>
     <description>Starts the app and wires the domain to its adapters</description>
 
+    <properties>
+        <!-- The composition root is exercised by CtrApplicationIT (needs Docker), not by unit tests: no coverage gate -->
+        <jacoco.skip>true</jacoco.skip>
+    </properties>
+
     <dependencies>
         <dependency>
             <groupId>org.cavalodetroia</groupId>

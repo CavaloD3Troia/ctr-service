@@ -25,6 +25,16 @@ class EventCreatedSerdeTest {
     }
 
     @Test
+    void should_passNullThrough_when_serializingATombstone() {
+        assertThat(serializer.serialize(TOPIC, null)).isNull();
+    }
+
+    @Test
+    void should_returnNull_when_deserializingATombstone() {
+        assertThat(deserializer.deserialize(TOPIC, null)).isNull();
+    }
+
+    @Test
     void should_throwSerializationException_when_bytesAreNotProtobuf() {
         assertThatThrownBy(() -> deserializer.deserialize(TOPIC, new byte[]{(byte) 0xFF, 0x00}))
                 .isInstanceOf(SerializationException.class)

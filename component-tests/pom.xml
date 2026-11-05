@@ -14,6 +14,11 @@
     <name>ctr-component-tests</name>
     <description>Black-box Cucumber tests: the whole app against Postgres and Kafka in Testcontainers</description>
 
+    <properties>
+        <!-- No production code here, and the black-box tests measure the app, not a module: no coverage gate -->
+        <jacoco.skip>true</jacoco.skip>
+    </properties>
+
     <dependencies>
         <dependency>
             <groupId>org.cavalodetroia</groupId>
