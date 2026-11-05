@@ -241,10 +241,12 @@ public record UploadSession(UUID id,
     }
 
     private PartTransition transitionOf(final int partIndex, final List<UploadClip> clipsAfter) {
+        final Set<Camera> expectedCameras = expectedCameras();
         final List<UploadClip> expected = clipsAfter.stream()
-                .filter(clip -> clip.partIndex() == partIndex && expectedCameras().contains(clip.camera()))
+                .filter(clip -> clip.partIndex() == partIndex && expectedCameras.contains(clip.camera()))
                 .toList();
-        if (expected.size() < expectedCameras().size() || !expected.stream().allMatch(UploadClip::isUploaded)) {
+        // A camera that has not registered yet has no clip at all
+        if (expected.size() < expectedCameras.size() || !expected.stream().allMatch(UploadClip::isUploaded)) {
             return PartTransition.NONE;
         }
         if (expected.size() == 1) {
