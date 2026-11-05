@@ -56,7 +56,9 @@ The contracts jar must be in `~/.m2`: a GitHub Packages `read:packages` token, o
 - A converter class at every boundary (API ↔ domain, domain ↔ jOOQ record, domain ↔ proto). Never map inline in
   a controller or listener, and never reuse one layer's type in another (no jOOQ record or proto in the API). The
   domain's enums of the ubiquitous language (`Camera`, `VenueFormat`) are values, not layer types: request and
-  response records use them, so the allowed values are defined once.
+  response records use them, so the allowed values are defined once. Exception: `VenueRequest.format` is a `String`
+  with `@Schema(implementation = VenueFormat.class)`. Only the first camera's format is checked (in
+  `RequestedVenue.toSpec`), so a later camera's must not fail at binding.
 - Logs are structured: `LOGGER.info("operation=create, message=Event created eventId='{}'", id)`. They go out as
   JSON lines (Spring Boot's `logstash` format, plus `service`), so every MDC entry becomes a field.
 - MDC: `CorrelationIdFilter` puts `correlation_id` for the whole request and clears the MDC at the end. Add
