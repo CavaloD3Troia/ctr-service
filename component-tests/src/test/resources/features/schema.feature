@@ -5,18 +5,22 @@ Feature: Schema
 
   Scenario: The upload schema is applied on a clean database
     Then these changesets are applied, in order
-      | ctr:0001-create-event         |
-      | ctr:0002-create-upload-tables |
+      | ctr:0001-create-event               |
+      | ctr:0002-create-upload-tables       |
+      | ctr:0003-create-idempotency-key     |
+      | ctr:0004-add-upload-session-version |
     And these tables exist
-      | upload_session |
-      | upload_camera  |
-      | upload_clip    |
-      | upload_part    |
+      | upload_session  |
+      | upload_camera   |
+      | upload_clip     |
+      | upload_part     |
+      | idempotency_key |
     And these tables have these primary keys
-      | upload_session | id                             |
-      | upload_camera  | session_id, camera             |
-      | upload_clip    | session_id, camera, part_index |
-      | upload_part    | session_id, part_index         |
+      | upload_session  | id                             |
+      | upload_camera   | session_id, camera             |
+      | upload_clip     | session_id, camera, part_index |
+      | upload_part     | session_id, part_index         |
+      | idempotency_key | key                            |
     And these tables have these foreign keys
       | upload_session | event_id   | event          |
       | upload_camera  | session_id | upload_session |

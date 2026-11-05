@@ -35,6 +35,8 @@
 
         <archunit.version>1.5.1</archunit.version>
         <cucumber.version>8.0.4</cucumber.version>
+        <!-- The 3.x line is the one built for Spring Boot 4 -->
+        <springdoc.version>3.2.0</springdoc.version>
 
         <!-- Component tests need Docker, so they only run with -Pcomponent-tests -->
         <skipComponentTests>true</skipComponentTests>
@@ -72,6 +74,11 @@
                 <groupId>com.tngtech.archunit</groupId>
                 <artifactId>archunit-junit5</artifactId>
                 <version>${archunit.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>org.springdoc</groupId>
+                <artifactId>springdoc-openapi-starter-webmvc-api</artifactId>
+                <version>${springdoc.version}</version>
             </dependency>
             <dependency>
                 <groupId>io.cucumber</groupId>

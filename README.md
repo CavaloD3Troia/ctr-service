@@ -2,14 +2,8 @@
 
 Control Tower: the only backend the UI (gui-service) talks to.
 
-Right now it is the simplest slice that goes through every layer:
-
-```
-POST /api/v1/events {"name": "Benfica vs Porto"}
-  → saved in Postgres (table `event`)
-  → published as EventCreated (protobuf) on ctr.event.created.v1
-  → consumed back by the service, which logs the payload
-```
+Right now it has the first endpoint of the clip upload flow (ADR-0001, second series): a camera registers on an
+event's upload session and is told where in the bucket to upload its clips. See [API](#api).
 
 ## Architecture
 
@@ -18,13 +12,80 @@ Kafka or SQL.
 
 | Module | Contents |
 |---|---|
-| `domain` | `Event`, `EventService`, and the ports: `port/in/CreateEvent` (called by api) and `port/out/EventRepository` and `EventPublisher` (implemented by infra). Depends on the JDK only. |
-| `api` | `EventController`, the request and response records, and `EventConverter` (domain → response) |
-| `infra` | `persistence/` (jOOQ), the Liquibase changelog in `resources/db/changelog/`, and `kafka/` (publisher, listener, protobuf serde and converter) |
-| `application` | `CtrApplication`, `wiring/EventWiring` (builds the domain service), and `application.yml` |
+| `domain` | `model/upload/UploadSession` (the registration rules) and its values, `service/UploadSessionService`, and the ports: `port/in/RegisterCamera` (called by api) and `port/out/EventRepository`, `UploadSessionRepository` and `IdempotencyStore` (implemented by infra). Depends on the JDK only. |
+| `api` | `controller/UploadSessionController`, the request and response records in `domain/`, `converter/`, `error/ApiExceptionHandler` (problem+json), `filter/CorrelationIdFilter` and `idempotency/IdempotentRequests` |
+| `infra` | `repository/` (jOOQ adapters), `converter/` (domain ↔ jOOQ records), the Liquibase changelog in `resources/db/changelog/`, and `kafka/serialization/` (the protobuf serializer for the publishers to come) |
+| `application` | `CtrApplication`, `config/StorageProperties`, `wiring/UploadWiring` (builds the domain service), and `application.yml` |
 | `component-tests` | Cucumber against the whole app, with Postgres and Kafka in Testcontainers |
 
-`ArchitectureTest` in `application` breaks the build if a layer reaches where it shouldn't.
+Inside each module the first package level says what kind of class lives there, the second the concept (see
+`CLAUDE.md`). `ArchitectureTest` in `application` breaks the build if a layer reaches where it shouldn't, or a
+class in `controller`/`converter` is not named for it.
+
+## API
+
+The OpenAPI description is served at `/v3/api-docs`.
+
+### `POST /api/v1/events/{eventId}/upload-session/cameras`
+
+A camera registers to upload an event's clips. The first camera of the event opens its upload session and sets the
+venue; a second one joins it. A session ends with the cameras `SINGLE`, or `LEFT` and `RIGHT`, all with the same
+`partCount`.
+
+```jsonc
+// Idempotency-Key: 9b1d6f4e-2c1a-4f7e-9a51-0c7d3e8b2f10
+{
+  "camera": "LEFT",                 // SINGLE | LEFT | RIGHT
+  "partCount": 40,                  // 1..1000, the same for every camera of the session
+  "contentType": "video/mp4",       // a video/* type
+  "venue": {                        // required on the first camera, ignored (and logged) on later ones
+    "format": "FOOTBALL_11V11",     // FUTSAL_5V5 | FOOTBALL_7V7 | FOOTBALL_11V11, checked on the first camera only
+    "lengthM": 105,                 // both measures or neither; neither stores the standard of the format:
+    "widthM": 68                    // 40 x 20, 65 x 45, 105 x 68 m
+  }
+}
+
+// 201 Created
+{
+  "sessionId": "019a5b2e-7f3c-7000-8000-000000000001",
+  "eventId": "0b5c3c38-4a8e-4f53-8c0e-5b0b8d8f2a11",
+  "status": "OPEN",
+  "camera": "LEFT",
+  "partCount": 40,
+  "prefix": "s3://cdt-videos/events/0b5c3c38-…/sessions/019a5b2e-…/LEFT/",
+  "clipKey": "{partIndex}.mp4",     // 0-based: 0.mp4 to 39.mp4
+  "cameras": [{ "camera": "LEFT", "partsUploaded": 0, "partCount": 40 }]
+}
+```
+
+It writes the session (when new), the camera, one `PENDING` row in `upload_clip` per part of this camera, and, with
+the first camera only, one `WAITING` row in `upload_part` per part.
+
+Cameras may register at the same time. Two first cameras can't both open a session
+(`upload_session_one_open_per_event`), and a camera only joins over the `version` of the session it read. The one
+that loses reads the session again and registers against it, so the event still gets one session, each camera once,
+and its parts once.
+
+| Header | |
+|---|---|
+| `Idempotency-Key` (optional, up to 255 characters) | The same key and body within 24 hours return the first `201` again without writing anything. The same key with another body is `422`. |
+| `X-Correlation-Id` (optional) | Echoed back on every response and put on every log line of the request (`correlation_id`). When absent, or not 1 to 128 of `A-Z a-z 0-9 . _ : -`, the service makes one: `CTR-<uuidv7>`. |
+
+Errors are `application/problem+json` with a `code`:
+
+| Status | `code` | When |
+|---|---|---|
+| 400 | `VALIDATION_FAILED` | A field breaks a rule above, or the first camera sends no venue; `errors` lists `{field, message}`. The body is checked before the event, except the venue format, which is checked when the first camera opens the session. |
+| 404 | `EVENT_NOT_FOUND` | ctr-service does not know the event |
+| 409 | `CAMERA_SET_CONFLICT` | The camera is already registered (with another `Idempotency-Key`), or doesn't fit: `SINGLE` with `LEFT`/`RIGHT` or the reverse |
+| 409 | `PART_COUNT_MISMATCH` | The second camera brings another `partCount` |
+| 422 | `IDEMPOTENCY_KEY_REUSED` | The `Idempotency-Key` came with a different request |
+| 500 | `INTERNAL_ERROR` | Only the `correlationId`, to find the logs |
+
+## Logs
+
+One JSON object per line, with `service`, `level`, `message`, `logger_name` and the MDC: `correlation_id` for every
+line of a request, plus `session_id` and `camera` once the request knows them.
 
 ## Running it locally
 
@@ -48,14 +109,23 @@ make logs
 make down    # `make reset` also deletes the database
 ```
 
-Then create an event and watch the listener log it:
+Events have no endpoint yet (ADR-0002), so add one by hand, then register a camera on it:
 
 ```sh
-curl -i localhost:8080/api/v1/events -H 'Content-Type: application/json' -d '{"name":"Benfica vs Porto"}'
+docker compose exec postgres psql -U ctr -d ctr \
+  -c "insert into event (id, name) values ('0b5c3c38-4a8e-4f53-8c0e-5b0b8d8f2a11', 'Benfica vs Porto')"
+curl -i localhost:8080/api/v1/events/0b5c3c38-4a8e-4f53-8c0e-5b0b8d8f2a11/upload-session/cameras \
+  -H 'Content-Type: application/json' -H "Idempotency-Key: $(uuidgen)" \
+  -d '{"camera":"LEFT","partCount":40,"contentType":"video/mp4","venue":{"format":"FOOTBALL_11V11"}}'
 ```
 
-`make help` lists every target. The app reads `DB_URL`, `DB_USERNAME`, `DB_PASSWORD` and
-`KAFKA_BOOTSTRAP_SERVERS`, which default to the compose setup.
+`make help` lists every target. The app reads these environment variables, which default to the compose setup:
+
+| Variable | Default | |
+|---|---|---|
+| `DB_URL`, `DB_USERNAME`, `DB_PASSWORD` | `jdbc:postgresql://localhost:5432/ctr`, `ctr`, `ctr` | Postgres |
+| `KAFKA_BOOTSTRAP_SERVERS` | `localhost:9092` | Kafka |
+| `CTR_STORAGE_BUCKET` | `cdt-videos` | The S3 bucket cameras upload their clips to (`ctr.storage.bucket`); it makes the `prefix` of the response |
 
 ## Tests
 
@@ -64,8 +134,13 @@ curl -i localhost:8080/api/v1/events -H 'Content-Type: application/json' -d '{"n
 | `make build` | Unit tests in every module, plus `ArchitectureTest` |
 | `make component-test` | All of that, plus the features in `component-tests/src/test/resources/features` |
 
-`events.feature` creates an event over HTTP, then checks three things: the row in Postgres, the message on the
-topic, and the listener's log line. `schema.feature` checks that Liquibase applied every changeset to the empty
+`register_camera.feature` registers cameras over HTTP and checks the response, the rows in Postgres and the log lines
+of the request (LEFT then RIGHT, SINGLE alone, each 409, the replayed `Idempotency-Key`, standard venue dimensions,
+a later camera's venue ignored whatever it holds, 404, 400, and the correlation id). `concurrent_registration.feature`
+sends two cameras of each of 20 events at the same time, or one right after the other, and checks that each event
+has one session with each camera once and its parts once. `openapi.feature` checks what `/v3/api-docs` says about the
+endpoint.
+`schema.feature` checks that Liquibase applied every changeset to the empty
 database (tables, primary and foreign keys, the one-open-session index), that running the changelog again applies
 nothing, and that an event can't have two open upload sessions. After a run, the report is at
 `component-tests/target/cucumber-report.html`.
@@ -88,16 +163,18 @@ and records what it ran in the `databasechangelog` table.
 |---|---|
 | `0001-create-event.sql` | `event` |
 | `0002-create-upload-tables.sql` | `upload_session` (at most one `OPEN` session per event), `upload_camera`, `upload_clip`, `upload_part` |
+| `0003-create-idempotency-key.sql` | `idempotency_key`: the stored response of each request with an `Idempotency-Key` (rows older than 24 hours are ignored) |
+| `0004-add-upload-session-version.sql` | `upload_session.version`: 0 when opened, plus one per camera that joins; a join is only stored over the version it read |
 
 To change the schema, add a changeset:
 
 1. Create the next file in `infra/src/main/resources/db/changelog/changes/`, numbered after the last one:
-   `0003-<what>.sql`.
+   `0005-<what>.sql`.
 2. Start it with the Liquibase header, then a `--changeset` line before each change:
    ```sql
    --liquibase formatted sql
 
-   --changeset ctr:0003-add-event-kickoff
+   --changeset ctr:0005-add-event-kickoff
    ALTER TABLE event ADD COLUMN kickoff_at TIMESTAMP WITH TIME ZONE;
    ```
 3. Run `make build`. jOOQ generates its classes from these files (no database needed), so the new tables and
@@ -114,7 +191,7 @@ existing `event` table. Recreate it with `make reset` (it deletes the local data
 
 ## Contracts
 
-`EventCreated` lives in [GlobalProtobufModels](https://github.com/CavaloD3Troia/GlobalProtobufModels), published as
+The Kafka messages live in [GlobalProtobufModels](https://github.com/CavaloD3Troia/GlobalProtobufModels), published as
 `org.cavalodetroia:global-protobuf-models` on GitHub Packages. GitHub Packages needs a token even for reads.
 Create a classic PAT with the `read:packages` scope and add it to `~/.m2/settings.xml`:
 
