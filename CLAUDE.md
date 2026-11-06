@@ -7,8 +7,8 @@ Kafka (protobuf), hexagonal. The platform design is ADR-0001 in `CavaloD3Troia/C
 `POST /api/v1/events/{eventId}/upload-session/cameras` (a camera registers) → Postgres,
 `GET /api/v1/upload-sessions/{sessionId}` (the app reads where the upload stands) → Postgres, and
 `POST /api/v1/upload-sessions/{sessionId}/cameras/{camera}/parts/{partIndex}/complete` (a camera confirms a clip) → an
-S3 `HEAD`, then Postgres. Nothing is published to Kafka yet. Build only what
-the current feature needs. When a feature does need one of the
+S3 `HEAD`, then Postgres, then, when the confirmation completes a part, Kafka (`ClipPairUploaded` or `ClipReady`, after
+the commit). Build only what the current feature needs. When a feature does need one of the
 patterns below (retries, DLQ, outbox, correlation ids…), implement it **the way this file describes**, not ad hoc.
 The [Not built yet](#not-built-yet) section lists what is missing on purpose.
 
@@ -20,7 +20,7 @@ The patterns come from the `kafka-rest-service` blueprint (skill of the same nam
 make build            # clean verify: unit + ArchUnit tests, and the 80% line-coverage gate
 make integration-test # + the *IT tests of application (Testcontainers, needs Docker)
 make component-test   # + Cucumber against the whole app (Testcontainers, needs Docker)
-make deps-up          # Postgres + Kafka + MinIO (with the bucket) only, then run CtrApplication from the IDE (.run/, profile dev)
+make deps-up          # Postgres + Kafka + MinIO (with the bucket) + Hawtio only, then run CtrApplication from the IDE (.run/, profiles dev,local)
 make up / logs / down # the app in Docker too
 ```
 
@@ -34,7 +34,7 @@ The contracts jar must be in `~/.m2`: a GitHub Packages `read:packages` token, o
 | `domain` | Records, domain services, ports: `port/in` (use cases), `port/out` (what infra implements), domain exceptions | Depend on anything but the JDK: no Spring, no Kafka, no jOOQ, no annotations |
 | `api` | Controllers, request/response records, converters, the error handler | Call infra or repositories; hold business rules |
 | `infra` | jOOQ repositories, Kafka publishers/listeners, serdes, converters, migrations | Import `api` or `application`; let a driver exception reach the domain |
-| `application` | `CtrApplication`, `wiring/` (builds domain services with `new`), `application.yml` plus `application-{dev,test,prod}.yml` | Contain business logic |
+| `application` | `CtrApplication`, `wiring/` (builds domain services with `new`), `application.yml` plus `application-{dev,test,prod}.yml`, and `application-local.yml` added to dev on a developer's machine | Contain business logic |
 | `component-tests` | Cucumber, black box | Reach into internals beyond what a scenario must observe |
 
 - `ArchitectureRulesTest` enforces this with the rules of `HexagonalRules` (both in
@@ -88,11 +88,15 @@ The contracts jar must be in `~/.m2`: a GitHub Packages `read:packages` token, o
   repository the session). The domain can't use SLF4J: it logs through the JDK's `System.Logger`, which Spring Boot
   bridges to the same logs and MDC.
 - Configuration: one `@ConfigurationProperties` record per concern in `application/config`, bound by prefix
-  (`StorageProperties` for `ctr.storage`). No `@Value`.
+  (`StorageProperties` for `ctr.storage`). No `@Value`. Exception: properties an infra adapter reads itself live
+  next to it, because infra may not import `application` (`KafkaProducerProperties` for `ctr.kafka`, in
+  `infra/kafka/config`); `wiring/` still enables them.
 - Profiles: `application.yml` holds what every profile shares. `application-dev.yml` defaults to `docker-compose.yml`,
   `application-test.yml` leaves the connections to Testcontainers, and `application-prod.yml` reads environment
   variables with no defaults. The app needs an active profile; without one it does not start. A new setting goes into
-  the three profile files, and prod never gets a default (`ProfilesTest` checks).
+  the three profile files, and prod never gets a default (`ProfilesTest` checks). `application-local.yml` is added to
+  dev on a developer's machine (the IDE run configuration, `make run`, `make up`): it creates the topics and exposes
+  Jolokia for Hawtio, neither of which any other profile may do.
 
 ## REST
 
@@ -125,7 +129,16 @@ of the entity whose ordering matters (`event_id`).
 
 **Publishing**
 - The domain calls a port; the adapter only converts and sends.
-- Never `.get()` on the send future. Handle it with `whenComplete` and log failures.
+- Never `.get()` on the send future. Handle it with `whenComplete` and log failures. The one exception is
+  `KafkaClipEventPublisher` (TH-152): the confirmation answers whether its part was published, so it waits, at most
+  5 s in all, and turns every failure into `PublishFailedException`. The domain publishes after the commit, logs a
+  failure and answers anyway; it never fails the request.
+- Every message carries the headers of `kafka/publisher/MessageHeaders`: `message_id` (UUIDv7), `message_type` (the
+  full protobuf name), `occurred_at` (ISO-8601 UTC), `producer` (`ctr-service`) and `correlation_id` (from the MDC).
+- Topics belong to `cdtv1-data-dependencies`: no profile but `local` declares a `NewTopic`
+  (`kafka/config/LocalTopicsConfig`, with each topic's `.retry` and `.dlq`). Topic names are `ctr.kafka.topics.*`.
+- Every publish records its bytes in `ctr.kafka.message.bytes` (a distribution summary tagged `topic`), visible over
+  JMX and, outside prod, at `/actuator/metrics`.
 - Delivery: `acks=all` and idempotence (the client defaults; keep them). Set `delivery.timeout.ms` explicitly when
   delivery matters. Producer retries are configuration, never a hand-written loop.
 - When a second publisher appears, extract an abstract `KafkaPublisher<K,V>` that owns sending, headers and
@@ -244,10 +257,10 @@ of the entity whose ordering matters (`event_id`).
 
 Left out of the first slice on purpose. Each item gets built, following this file, when a feature needs it:
 
-- the transactional outbox (publishing) and the inbox with deduplication (consuming)
+- the transactional outbox (publishing, TH-156: until then a crash between the commit and the send leaves a part
+  unpublished until its confirmation is repeated) and the inbox with deduplication (consuming)
 - consumer retries with backoff, and a DLQ
 - persistence retries (resilience4j)
-- the correlation id as a Kafka header (the HTTP filter and the MDC are built)
 - the explicit `MessageListener` wiring
 - metrics: `@Timed` on controllers, listeners and repositories, plus `KafkaClientMetrics`
 - OpenTelemetry tracing
