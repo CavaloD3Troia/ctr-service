@@ -35,7 +35,7 @@ public final class CameraRegistrations {
      * The first camera of a session, with the venue.
      */
     public static CameraRegistration first(final Camera camera) {
-        return new CameraRegistration(camera, PART_COUNT, REQUESTED_VENUE);
+        return new CameraRegistration(camera, PART_COUNT, "video/mp4", REQUESTED_VENUE);
     }
 
     /**
@@ -46,7 +46,7 @@ public final class CameraRegistrations {
     }
 
     public static CameraRegistration joining(final Camera camera, final int partCount) {
-        return new CameraRegistration(camera, partCount, null);
+        return new CameraRegistration(camera, partCount, "video/mp4", null);
     }
 
     /**

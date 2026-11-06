@@ -152,12 +152,29 @@ class JooqUploadSessionRepositoryTest {
         assertThat(writes()).isEmpty();
     }
 
+    // Publication (TH-152)
+
+    // AC-1, AC-4: one statement outside any confirmation, and a part published already keeps its first time
+    @Test
+    void should_setPublishedAtOnlyWhereItIsNull_when_markingAPartPublished() {
+        repository.markPublished(SESSION_ID, 3, NOW);
+
+        assertThat(postgres.statements).singleElement().satisfies(statement -> {
+            assertThat(statement.sql()).startsWithIgnoringCase("update \"upload_part\"")
+                    .containsIgnoringCase("\"published_at\" is null")
+                    .doesNotContainIgnoringCase("for update");
+            // The mock connection gets the timestamp as Postgres text, in UTC
+            assertThat(statement.bindings()).containsExactly("2026-11-05 10:00:00+00:00", SESSION_ID, 3);
+        });
+        assertThat(MDC.get("session_id")).isEqualTo(SESSION_ID.toString());
+    }
+
     // Registrations
 
     @Test
     void should_insertTheSessionTheCameraAndTheirClipsAndParts_when_creating() {
         final UploadSession session = UploadSession.open(SESSION_ID, EVENT_ID,
-                new CameraRegistration(Camera.LEFT, 2, VENUE), BUCKET, NOW).session();
+                new CameraRegistration(Camera.LEFT, 2, "video/mp4", VENUE), BUCKET, NOW).session();
 
         repository.create(session);
 
@@ -168,7 +185,7 @@ class JooqUploadSessionRepositoryTest {
                 },
                 cameraRow -> {
                     assertThat(cameraRow.sql()).startsWithIgnoringCase("insert into \"upload_camera\"");
-                    assertThat(cameraRow.bindings()).contains(SESSION_ID, "LEFT", 2);
+                    assertThat(cameraRow.bindings()).contains(SESSION_ID, "LEFT", 2, "video/mp4");
                 },
                 clipRows -> {
                     assertThat(clipRows.sql()).startsWithIgnoringCase("insert into \"upload_clip\"");
@@ -185,7 +202,7 @@ class JooqUploadSessionRepositoryTest {
         postgres.failsWith(new SQLException(
                 "ERROR: duplicate key value violates unique constraint \"upload_session_one_open_per_event\"", "23505"));
         final UploadSession session = UploadSession.open(SESSION_ID, EVENT_ID,
-                new CameraRegistration(Camera.LEFT, 2, VENUE), BUCKET, NOW).session();
+                new CameraRegistration(Camera.LEFT, 2, "video/mp4", VENUE), BUCKET, NOW).session();
 
         assertThatThrownBy(() -> repository.create(session))
                 .isInstanceOf(OpenSessionAlreadyExistsException.class)
@@ -196,7 +213,7 @@ class JooqUploadSessionRepositoryTest {
     void should_letAnotherFailureThrough_when_creating() {
         postgres.failsWith(new SQLException("connection lost", "08006"));
         final UploadSession session = UploadSession.open(SESSION_ID, EVENT_ID,
-                new CameraRegistration(Camera.LEFT, 2, VENUE), BUCKET, NOW).session();
+                new CameraRegistration(Camera.LEFT, 2, "video/mp4", VENUE), BUCKET, NOW).session();
 
         assertThatThrownBy(() -> repository.create(session))
                 .isInstanceOf(DataAccessException.class)
@@ -206,8 +223,8 @@ class JooqUploadSessionRepositoryTest {
     @Test
     void should_storeTheCameraOverTheVersionItRead_when_addingACamera() {
         final RegistrationResult joined = UploadSession.open(SESSION_ID, EVENT_ID,
-                        new CameraRegistration(Camera.LEFT, 2, VENUE), BUCKET, NOW).session()
-                .join(new CameraRegistration(Camera.RIGHT, 2, null), BUCKET, NOW);
+                        new CameraRegistration(Camera.LEFT, 2, "video/mp4", VENUE), BUCKET, NOW).session()
+                .join(new CameraRegistration(Camera.RIGHT, 2, "video/mp4", null), BUCKET, NOW);
 
         repository.addCamera(joined.session(), joined.camera());
 
@@ -234,8 +251,8 @@ class JooqUploadSessionRepositoryTest {
     void should_throwUploadSessionChangedAndInsertNothing_when_theSessionMovedOn() {
         postgres.affects(UPLOAD_SESSION, 0);
         final RegistrationResult joined = UploadSession.open(SESSION_ID, EVENT_ID,
-                        new CameraRegistration(Camera.LEFT, 2, VENUE), BUCKET, NOW).session()
-                .join(new CameraRegistration(Camera.RIGHT, 2, null), BUCKET, NOW);
+                        new CameraRegistration(Camera.LEFT, 2, "video/mp4", VENUE), BUCKET, NOW).session()
+                .join(new CameraRegistration(Camera.RIGHT, 2, "video/mp4", null), BUCKET, NOW);
 
         assertThatThrownBy(() -> repository.addCamera(joined.session(), joined.camera()))
                 .isInstanceOf(UploadSessionChangedException.class);
@@ -244,8 +261,8 @@ class JooqUploadSessionRepositoryTest {
 
     private static UploadSession leftThenRight(final int partCount) {
         final UploadSession left = UploadSession.open(SESSION_ID, EVENT_ID,
-                new CameraRegistration(Camera.LEFT, partCount, VENUE), BUCKET, NOW).session();
-        return left.join(new CameraRegistration(Camera.RIGHT, partCount, null), BUCKET, NOW).session();
+                new CameraRegistration(Camera.LEFT, partCount, "video/mp4", VENUE), BUCKET, NOW).session();
+        return left.join(new CameraRegistration(Camera.RIGHT, partCount, "video/mp4", null), BUCKET, NOW).session();
     }
 
     /** The session as its four tables hold it. */

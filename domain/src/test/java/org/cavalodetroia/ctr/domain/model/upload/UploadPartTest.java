@@ -40,6 +40,29 @@ class UploadPartTest {
                 .published()).isTrue();
     }
 
+    // TH-152 AC-4, AC-5: only a COMPLETE part not yet published is owed a message
+    @Test
+    void should_awaitPublishingOnlyWhileCompleteAndUnpublished() {
+        final Instant publishedAt = Instant.parse("2026-11-05T12:00:00Z");
+
+        assertThat(UploadPart.waiting(3).awaitsPublishing()).isFalse();
+        assertThat(new UploadPart(3, PartStatus.NO_OVERLAP, new Window(300_000, 0), null).awaitsPublishing())
+                .isFalse();
+        assertThat(new UploadPart(3, PartStatus.COMPLETE, WINDOW, null).awaitsPublishing()).isTrue();
+        assertThat(new UploadPart(3, PartStatus.COMPLETE, WINDOW, publishedAt).awaitsPublishing()).isFalse();
+    }
+
+    @Test
+    void should_keepTheWindowAndTakeThePublicationTime_when_markedPublished() {
+        final Instant publishedAt = Instant.parse("2026-11-05T12:00:00Z");
+
+        assertThat(new UploadPart(3, PartStatus.COMPLETE, WINDOW, null).markPublished(publishedAt))
+                .isEqualTo(new UploadPart(3, PartStatus.COMPLETE, WINDOW, publishedAt));
+        assertThatThrownBy(() -> new UploadPart(3, PartStatus.COMPLETE, WINDOW, publishedAt).markPublished(publishedAt))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("published at");
+    }
+
     @Test
     void should_reject_when_theStatusDisagreesWithTheWindow() {
         assertThatThrownBy(() -> new UploadPart(3, PartStatus.WAITING, WINDOW, null))

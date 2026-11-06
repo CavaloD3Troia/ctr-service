@@ -5,6 +5,7 @@ import org.cavalodetroia.ctr.domain.exception.EtagMismatchException;
 import org.cavalodetroia.ctr.domain.exception.EventNotFoundException;
 import org.cavalodetroia.ctr.domain.exception.ObjectNotFoundException;
 import org.cavalodetroia.ctr.domain.exception.OpenSessionAlreadyExistsException;
+import org.cavalodetroia.ctr.domain.exception.PublishFailedException;
 import org.cavalodetroia.ctr.domain.exception.SessionNotFoundException;
 import org.cavalodetroia.ctr.domain.exception.SizeMismatchException;
 import org.cavalodetroia.ctr.domain.exception.UploadSessionChangedException;
@@ -22,6 +23,7 @@ import org.cavalodetroia.ctr.domain.model.upload.Window;
 import org.cavalodetroia.ctr.domain.port.in.CompleteClip;
 import org.cavalodetroia.ctr.domain.port.in.GetUploadSession;
 import org.cavalodetroia.ctr.domain.port.in.RegisterCamera;
+import org.cavalodetroia.ctr.domain.port.out.ClipEventPublisher;
 import org.cavalodetroia.ctr.domain.port.out.ClipStorage;
 import org.cavalodetroia.ctr.domain.port.out.EventRepository;
 import org.cavalodetroia.ctr.domain.port.out.UploadSessionRepository;
@@ -49,21 +51,25 @@ public class UploadSessionService implements RegisterCamera, GetUploadSession, C
     private final EventRepository events;
     private final UploadSessionRepository sessions;
     private final ClipStorage storage;
+    private final ClipEventPublisher publisher;
     private final Clock clock;
     private final String bucket;
 
     /**
-     * @param storage the bucket {@code bucket}, where the clips are checked
-     * @param bucket  the bucket cameras upload their clips to
+     * @param storage   the bucket {@code bucket}, where the clips are checked
+     * @param publisher where a completed part is handed over to extraction
+     * @param bucket    the bucket cameras upload their clips to
      */
     public UploadSessionService(final EventRepository events,
                                 final UploadSessionRepository sessions,
                                 final ClipStorage storage,
+                                final ClipEventPublisher publisher,
                                 final Clock clock,
                                 final String bucket) {
         this.events = events;
         this.sessions = sessions;
         this.storage = storage;
+        this.publisher = publisher;
         this.clock = clock;
         this.bucket = Objects.requireNonNull(bucket, "bucket");
     }
@@ -88,6 +94,11 @@ public class UploadSessionService implements RegisterCamera, GetUploadSession, C
      * before the bucket is asked, and the bucket is asked before anything is written, outside any transaction. The
      * domain then decides again over the session read under the repository's lock, since another confirmation may
      * have changed it in the meantime.
+     * <p>
+     * Publishing comes last, after the repository's transaction has committed, so a message never goes out for a part
+     * the database could still roll back. Only a {@code COMPLETE} part not published yet is published, whether this
+     * confirmation closed it or a repeated one finds it unpublished after a failed publish. A failed publish leaves
+     * the part unpublished and the confirmation answered: the part is committed, and the next repeat publishes it.
      */
     @Override
     public ClipCompletion complete(final UUID sessionId,
@@ -102,7 +113,28 @@ public class UploadSessionService implements RegisterCamera, GetUploadSession, C
                 ? session.completeClip(camera, partIndex, confirmation, clock.instant())
                 : checkThenStore(sessionId, clip, confirmation);
         log(completion);
-        return completion;
+        return publishIfDue(completion);
+    }
+
+    private ClipCompletion publishIfDue(final ClipCompletion completion) {
+        final UploadSession session = completion.after();
+        final int partIndex = completion.partIndex();
+        if (!session.part(partIndex).awaitsPublishing()) {
+            return completion;
+        }
+        try {
+            publisher.publish(session, partIndex);
+        } catch (PublishFailedException e) {
+            LOGGER.log(Level.ERROR, () -> ("operation=publishPart, message=Publish failed, the part stays unpublished "
+                    + "until its confirmation is repeated sessionId='%s' partIndex=%d topic='%s' reason='%s'")
+                    .formatted(session.id(), partIndex, e.topic(), e.getMessage()), e);
+            return completion;
+        }
+        final Instant publishedAt = clock.instant();
+        sessions.markPublished(session.id(), partIndex, publishedAt);
+        LOGGER.log(Level.INFO, () -> "operation=publishPart, message=Part published sessionId='%s' partIndex=%d"
+                .formatted(session.id(), partIndex));
+        return completion.markPublished(publishedAt);
     }
 
     private ClipCompletion checkThenStore(final UUID sessionId,

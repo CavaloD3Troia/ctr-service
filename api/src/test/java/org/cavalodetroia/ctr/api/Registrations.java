@@ -44,12 +44,12 @@ public final class Registrations {
     }
 
     public static RegistrationResult leftOpened() {
-        return UploadSession.open(SESSION_ID, EVENT_ID, new CameraRegistration(Camera.LEFT, PART_COUNT, VENUE),
+        return UploadSession.open(SESSION_ID, EVENT_ID, new CameraRegistration(Camera.LEFT, PART_COUNT, "video/mp4", VENUE),
                 BUCKET, NOW);
     }
 
     public static RegistrationResult rightJoinedLeft() {
-        return leftOpened().session().join(new CameraRegistration(Camera.RIGHT, PART_COUNT, null), BUCKET, NOW);
+        return leftOpened().session().join(new CameraRegistration(Camera.RIGHT, PART_COUNT, "video/mp4", null), BUCKET, NOW);
     }
 
     /**
@@ -70,7 +70,7 @@ public final class Registrations {
      * A single camera's session, nothing uploaded.
      */
     public static UploadSession singleOpened(final int partCount) {
-        return UploadSession.open(SESSION_ID, EVENT_ID, new CameraRegistration(Camera.SINGLE, partCount, VENUE),
+        return UploadSession.open(SESSION_ID, EVENT_ID, new CameraRegistration(Camera.SINGLE, partCount, "video/mp4", VENUE),
                 BUCKET, NOW).session();
     }
 
@@ -86,8 +86,8 @@ public final class Registrations {
      */
     public static UploadSession mixedRightThenLeft() {
         final UploadSession opened = UploadSession.open(SESSION_ID, EVENT_ID,
-                new CameraRegistration(Camera.RIGHT, 4, VENUE), BUCKET, NOW).session();
-        final UploadSession both = opened.join(new CameraRegistration(Camera.LEFT, 4, null), BUCKET, NOW).session();
+                new CameraRegistration(Camera.RIGHT, 4, "video/mp4", VENUE), BUCKET, NOW).session();
+        final UploadSession both = opened.join(new CameraRegistration(Camera.LEFT, 4, "video/mp4", null), BUCKET, NOW).session();
         final List<UploadClip> clips = both.clips().stream()
                 .map(clip -> switch (clip.camera()) {
                     case LEFT -> uploaded(clip, LEFT_SIZE, clip.partIndex() * FIVE_MINUTES_MS, LEFT_UPLOADED_AT);

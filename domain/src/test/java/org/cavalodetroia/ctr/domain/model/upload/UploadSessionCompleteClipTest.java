@@ -116,7 +116,7 @@ class UploadSessionCompleteClipTest {
     @Test
     void should_closeThePartAndTheSessionInOneConfirmation_when_aSingleCameraHasOnePart() {
         final UploadSession single = UploadSession.open(SESSION_ID, EVENT_ID,
-                new CameraRegistration(Camera.SINGLE, 1, REQUESTED_VENUE), BUCKET, OPENED_AT).session();
+                new CameraRegistration(Camera.SINGLE, 1, "video/mp4", REQUESTED_VENUE), BUCKET, OPENED_AT).session();
 
         final ClipCompletion completion = single.completeClip(Camera.SINGLE, 0, confirmation(), UPLOADED_AT);
 

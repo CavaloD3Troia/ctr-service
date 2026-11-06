@@ -20,6 +20,8 @@ import org.slf4j.MDC;
 import org.springframework.stereotype.Repository;
 
 import java.sql.SQLException;
+import java.time.Instant;
+import java.time.ZoneOffset;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
@@ -88,6 +90,20 @@ public class JooqUploadSessionRepository implements UploadSessionRepository {
             }
             return result;
         });
+    }
+
+    /**
+     * One statement, so one short transaction of its own, after the confirmation's has committed.
+     */
+    @Override
+    public void markPublished(final UUID sessionId, final int partIndex, final Instant publishedAt) {
+        MDC.put(MDC_SESSION_ID, sessionId.toString());
+        dsl.update(UPLOAD_PART)
+                .set(UPLOAD_PART.PUBLISHED_AT, publishedAt.atOffset(ZoneOffset.UTC))
+                .where(UPLOAD_PART.SESSION_ID.eq(sessionId))
+                .and(UPLOAD_PART.PART_INDEX.eq(partIndex))
+                .and(UPLOAD_PART.PUBLISHED_AT.isNull())
+                .execute();
     }
 
     @Override

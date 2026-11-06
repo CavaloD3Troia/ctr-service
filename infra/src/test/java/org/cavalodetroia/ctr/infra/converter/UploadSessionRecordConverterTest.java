@@ -163,7 +163,7 @@ class UploadSessionRecordConverterTest {
 
     private static UploadSession leftThenRight(final RequestedVenue venue) {
         final UploadSession left = UploadSession.open(SESSION_ID, EVENT_ID,
-                new CameraRegistration(Camera.LEFT, 2, venue), "cdt-videos", OPENED_AT).session();
-        return left.join(new CameraRegistration(Camera.RIGHT, 2, null), "cdt-videos", JOINED_AT).session();
+                new CameraRegistration(Camera.LEFT, 2, "video/mp4", venue), "cdt-videos", OPENED_AT).session();
+        return left.join(new CameraRegistration(Camera.RIGHT, 2, "video/mp4", null), "cdt-videos", JOINED_AT).session();
     }
 }

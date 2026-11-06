@@ -54,7 +54,7 @@ class UploadSessionServiceCompleteTest {
     private final FakeClipStorage storage = new FakeClipStorage();
     private final InMemoryUploadSessionRepository sessions = new InMemoryUploadSessionRepository();
     private final UploadSessionService service = new UploadSessionService(mock(EventRepository.class), sessions,
-            storage, Clock.fixed(NOW, ZoneOffset.UTC), BUCKET);
+            storage, new FakeClipEventPublisher(sessions), Clock.fixed(NOW, ZoneOffset.UTC), BUCKET);
 
     private UploadSession session;
 

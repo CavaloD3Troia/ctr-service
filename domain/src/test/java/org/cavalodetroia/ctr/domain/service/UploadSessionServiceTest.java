@@ -9,6 +9,7 @@ import org.cavalodetroia.ctr.domain.model.upload.Camera;
 import org.cavalodetroia.ctr.domain.model.upload.RegistrationResult;
 import org.cavalodetroia.ctr.domain.model.upload.UploadCamera;
 import org.cavalodetroia.ctr.domain.model.upload.UploadSession;
+import org.cavalodetroia.ctr.domain.port.out.ClipEventPublisher;
 import org.cavalodetroia.ctr.domain.port.out.ClipStorage;
 import org.cavalodetroia.ctr.domain.port.out.EventRepository;
 import org.cavalodetroia.ctr.domain.port.out.UploadSessionRepository;
@@ -56,8 +57,11 @@ class UploadSessionServiceTest {
     @Mock
     private ClipStorage storage;
 
+    @Mock
+    private ClipEventPublisher publisher;
+
     private UploadSessionService service() {
-        return new UploadSessionService(events, sessions, storage, CLOCK, BUCKET);
+        return new UploadSessionService(events, sessions, storage, publisher, CLOCK, BUCKET);
     }
 
     @Test

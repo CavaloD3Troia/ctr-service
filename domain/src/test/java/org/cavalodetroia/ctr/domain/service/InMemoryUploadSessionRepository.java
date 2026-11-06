@@ -6,18 +6,23 @@ import org.cavalodetroia.ctr.domain.model.upload.UploadCamera;
 import org.cavalodetroia.ctr.domain.model.upload.UploadSession;
 import org.cavalodetroia.ctr.domain.port.out.UploadSessionRepository;
 
+import java.time.Instant;
+import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
 import java.util.function.Function;
 
 /**
- * Sessions in memory, for the clip confirmation, counting the writes. Registration is tested against mocks.
+ * Sessions in memory, for the clip confirmation, counting the writes and recording the order of the calls that write
+ * (with {@link FakeClipEventPublisher}'s, when it shares this log). Registration is tested against mocks.
  */
 final class InMemoryUploadSessionRepository implements UploadSessionRepository {
 
     private final Map<UUID, UploadSession> sessions = new HashMap<>();
+    private final List<String> calls = new ArrayList<>();
     private UploadSession staleRead;
     private int writes;
 
@@ -41,6 +46,18 @@ final class InMemoryUploadSessionRepository implements UploadSessionRepository {
         return writes;
     }
 
+    /**
+     * @return {@code update} (once its change is stored, as a commit), {@code markPublished <partIndex>} and what
+     *         others {@link #record recorded}, in call order
+     */
+    List<String> calls() {
+        return List.copyOf(calls);
+    }
+
+    void record(final String call) {
+        calls.add(call);
+    }
+
     @Override
     public Optional<UploadSession> findById(final UUID sessionId) {
         if (staleRead != null) {
@@ -59,7 +76,18 @@ final class InMemoryUploadSessionRepository implements UploadSessionRepository {
             sessions.put(sessionId, result.after());
             writes++;
         }
+        calls.add("update");
         return result;
+    }
+
+    // Like the jOOQ adapter's UPDATE ... WHERE published_at IS NULL: a part published already keeps its time
+    @Override
+    public void markPublished(final UUID sessionId, final int partIndex, final Instant publishedAt) {
+        calls.add("markPublished " + partIndex);
+        final UploadSession current = sessions.get(sessionId);
+        if (!current.part(partIndex).published()) {
+            sessions.put(sessionId, current.markPublished(partIndex, publishedAt));
+        }
     }
 
     @Override

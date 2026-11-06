@@ -2,12 +2,14 @@ package org.cavalodetroia.ctr.domain.model.upload;
 
 import org.cavalodetroia.ctr.domain.exception.CameraSetConflictException;
 import org.cavalodetroia.ctr.domain.exception.PartCountMismatchException;
+import org.cavalodetroia.ctr.domain.exception.UnknownCameraException;
 import org.cavalodetroia.ctr.domain.exception.VenueSpecException;
 import org.cavalodetroia.ctr.domain.model.venue.RequestedVenue;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.CsvSource;
 
+import java.time.Instant;
 import java.util.Arrays;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -24,6 +26,7 @@ import static org.cavalodetroia.ctr.domain.model.upload.CameraRegistrations.firs
 import static org.cavalodetroia.ctr.domain.model.upload.CameraRegistrations.joining;
 import static org.cavalodetroia.ctr.domain.model.upload.CameraRegistrations.leftAndRight;
 import static org.cavalodetroia.ctr.domain.model.upload.CameraRegistrations.openedBy;
+import static org.cavalodetroia.ctr.domain.model.upload.CameraRegistrations.withParts;
 import static org.cavalodetroia.ctr.domain.model.upload.CameraRegistrations.withUploaded;
 
 /**
@@ -45,7 +48,8 @@ class UploadSessionTest {
         assertThat(session.venue()).isEqualTo(VENUE);
         assertThat(session.createdAt()).isEqualTo(OPENED_AT);
         assertThat(session.cameras()).containsExactly(result.camera());
-        assertThat(result.camera()).isEqualTo(new UploadCamera(Camera.LEFT, 3,
+        // TH-152: the content type is kept with the camera, for the clips' messages
+        assertThat(result.camera()).isEqualTo(new UploadCamera(Camera.LEFT, 3, "video/mp4",
                 "s3://cdt-videos/" + KEY_PREFIX + "LEFT/", OPENED_AT));
         assertThat(session.clips())
                 .extracting(UploadClip::camera, UploadClip::partIndex, UploadClip::objectKey, UploadClip::status)
@@ -82,7 +86,7 @@ class UploadSessionTest {
     @ParameterizedTest(name = "format {0}")
     @CsvSource(value = {"NULL", "HOCKEY", "football_11v11"}, nullValues = "NULL")
     void should_rejectOpening_when_theFirstCameraHasNoValidVenueFormat(final String format) {
-        final CameraRegistration first = new CameraRegistration(Camera.LEFT, 3, new RequestedVenue(format, null, null));
+        final CameraRegistration first = new CameraRegistration(Camera.LEFT, 3, "video/mp4", new RequestedVenue(format, null, null));
 
         assertThatThrownBy(() -> UploadSession.open(SESSION_ID, EVENT_ID, first, BUCKET, OPENED_AT))
                 .isInstanceOfSatisfying(VenueSpecException.class,
@@ -170,7 +174,7 @@ class UploadSessionTest {
         final UploadSession left = openedBy(Camera.LEFT);
         final RequestedVenue other = new RequestedVenue(format, lengthM, widthM);
 
-        final RegistrationResult result = left.join(new CameraRegistration(Camera.RIGHT, 3, other), BUCKET, JOINED_AT);
+        final RegistrationResult result = left.join(new CameraRegistration(Camera.RIGHT, 3, "video/mp4", other), BUCKET, JOINED_AT);
 
         assertThat(result.session().venue()).isEqualTo(VENUE);
         assertThat(result.venueIgnored()).isTrue();
@@ -211,11 +215,46 @@ class UploadSessionTest {
 
     @Test
     void should_rejectTheRegistration_when_partCountIsOutsideOneToAThousand() {
-        assertThatThrownBy(() -> new CameraRegistration(Camera.LEFT, 0, REQUESTED_VENUE))
+        assertThatThrownBy(() -> new CameraRegistration(Camera.LEFT, 0, "video/mp4", REQUESTED_VENUE))
                 .isInstanceOf(IllegalArgumentException.class);
-        assertThatThrownBy(() -> new CameraRegistration(Camera.LEFT, 1001, REQUESTED_VENUE))
+        assertThatThrownBy(() -> new CameraRegistration(Camera.LEFT, 1001, "video/mp4", REQUESTED_VENUE))
                 .isInstanceOf(IllegalArgumentException.class);
-        assertThat(new CameraRegistration(Camera.LEFT, 1, REQUESTED_VENUE).partCount()).isEqualTo(1);
-        assertThat(new CameraRegistration(Camera.LEFT, 1000, REQUESTED_VENUE).partCount()).isEqualTo(1000);
+        assertThat(new CameraRegistration(Camera.LEFT, 1, "video/mp4", REQUESTED_VENUE).partCount()).isEqualTo(1);
+        assertThat(new CameraRegistration(Camera.LEFT, 1000, "video/mp4", REQUESTED_VENUE).partCount())
+                .isEqualTo(1000);
+    }
+
+    // TH-152: the content type goes out with every clip, so a registration can't be without one
+    @Test
+    void should_rejectTheRegistration_when_theContentTypeIsMissingOrBlank() {
+        assertThatThrownBy(() -> new CameraRegistration(Camera.LEFT, 3, null, REQUESTED_VENUE))
+                .isInstanceOf(NullPointerException.class);
+        assertThatThrownBy(() -> new CameraRegistration(Camera.LEFT, 3, " ", REQUESTED_VENUE))
+                .isInstanceOf(IllegalArgumentException.class);
+    }
+
+    // TH-152 AC-1, AC-2: a part is published once, and only when COMPLETE
+    @Test
+    void should_publishOnlyACompletePartAndOnlyOnce_when_markingItPublished() {
+        final Instant publishedAt = Instant.parse("2026-11-05T11:00:01Z");
+        final UploadSession session = withParts(leftAndRight(),
+                new UploadPart(0, PartStatus.COMPLETE, new Window(0, 300_000), null),
+                new UploadPart(1, PartStatus.NO_OVERLAP, new Window(300_000, 0), null));
+
+        final UploadSession published = session.markPublished(0, publishedAt);
+
+        assertThat(published.part(0).publishedAt()).isEqualTo(publishedAt);
+        assertThat(published.partsPublished()).isEqualTo(1);
+        assertThatThrownBy(() -> published.markPublished(0, publishedAt)).isInstanceOf(IllegalStateException.class);
+        assertThatThrownBy(() -> session.markPublished(1, publishedAt)).isInstanceOf(IllegalStateException.class);
+        assertThatThrownBy(() -> session.markPublished(2, publishedAt)).isInstanceOf(IllegalStateException.class);
+    }
+
+    @Test
+    void should_giveTheCameraAsRegistered_when_askedForARegisteredCamera() {
+        final UploadSession session = leftAndRight();
+
+        assertThat(session.camera(Camera.RIGHT).contentType()).isEqualTo("video/mp4");
+        assertThatThrownBy(() -> session.camera(Camera.SINGLE)).isInstanceOf(UnknownCameraException.class);
     }
 }

@@ -44,7 +44,7 @@ public class UploadSessionConverter {
      */
     public CameraRegistration toRegistration(final RegisterCameraRequest request) {
         final VenueRequest venue = request.venue();
-        return new CameraRegistration(request.camera(), request.partCount(),
+        return new CameraRegistration(request.camera(), request.partCount(), request.contentType(),
                 venue == null ? null : new RequestedVenue(venue.format(), venue.lengthM(), venue.widthM()));
     }
 

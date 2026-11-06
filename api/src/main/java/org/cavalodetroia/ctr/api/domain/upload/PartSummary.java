@@ -7,7 +7,7 @@ import org.cavalodetroia.ctr.domain.model.upload.PartState;
  * Where one part of the match stands.
  *
  * @param status    which camera it waits for, or how it closed
- * @param published whether the part has been published
+ * @param published whether the part's message has been published for extraction
  */
 public record PartSummary(
         @Schema(description = "WAITING_LEFT or WAITING_RIGHT while that camera's clip is missing (or it has not "
@@ -16,6 +16,8 @@ public record PartSummary(
                 + "camera's clip missing) never comes back here: a SINGLE confirmation closes its part")
         PartState status,
 
-        @Schema(description = "Whether the part has been published", example = "false")
+        @Schema(description = "Whether the part's message (ClipPairUploaded or ClipReady) has been published for "
+                + "extraction. Only a COMPLETE part is published. False while it waits, for NO_OVERLAP, and when "
+                + "publishing failed; the same confirmation sent again then publishes it", example = "true")
         boolean published) {
 }
