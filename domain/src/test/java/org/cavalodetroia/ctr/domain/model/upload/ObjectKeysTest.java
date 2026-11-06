@@ -39,4 +39,13 @@ class ObjectKeysTest {
 
         assertThat(prefix + clip).isEqualTo("s3://cdt-videos/" + ObjectKeys.clipKey(EVENT_ID, SESSION_ID, Camera.LEFT, 7));
     }
+
+    // TH-152 AC-1, AC-2: the published uri is s3://<bucket>/<clip key>
+    @Test
+    void should_beTheBucketAndTheClipKey_when_buildingAClipUriFromThePrefix() {
+        final String prefix = ObjectKeys.prefix("cdt-videos", EVENT_ID, SESSION_ID, Camera.RIGHT);
+
+        assertThat(ObjectKeys.clipUri(prefix, 3))
+                .isEqualTo("s3://cdt-videos/" + ObjectKeys.clipKey(EVENT_ID, SESSION_ID, Camera.RIGHT, 3));
+    }
 }

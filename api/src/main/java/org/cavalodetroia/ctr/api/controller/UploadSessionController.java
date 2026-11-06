@@ -167,8 +167,11 @@ public class UploadSessionController {
                     + "agree marks the clip UPLOADED. The part is COMPLETE when every camera has uploaded clip "
                     + "partIndex: its window is the clip's own for SINGLE, and the overlap of the two clips for LEFT "
                     + "and RIGHT (the later start to the earlier end), or NO_OVERLAP when they share none. The "
-                    + "session is COMPLETED when every clip of every camera is uploaded. Repeating the call with the "
-                    + "same body returns the same 200 and writes nothing.",
+                    + "session is COMPLETED when every clip of every camera is uploaded. Once the part is COMPLETE and "
+                    + "stored, its message goes to Kafka (ClipPairUploaded for LEFT and RIGHT, ClipReady for SINGLE) "
+                    + "and part.published says whether the broker took it; a broker that is down never fails the "
+                    + "call. Repeating the call with the same body returns the same 200 and writes nothing, except "
+                    + "that it publishes a COMPLETE part whose publishing failed.",
             parameters = @Parameter(in = ParameterIn.HEADER, name = CorrelationIdFilter.HEADER,
                     description = CORRELATION_ID_PARAMETER,
                     schema = @Schema(type = "string", maxLength = 128, example = "gui-7f3c")))

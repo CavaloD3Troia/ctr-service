@@ -44,6 +44,11 @@
             <groupId>org.springframework.boot</groupId>
             <artifactId>spring-boot-starter-kafka</artifactId>
         </dependency>
+        <!-- The bytes-per-message distribution summary of the publisher (version from the Spring Boot parent) -->
+        <dependency>
+            <groupId>io.micrometer</groupId>
+            <artifactId>micrometer-core</artifactId>
+        </dependency>
 
         <!-- S3 (MinIO locally), for the HEAD that confirms a clip. The JDK's URL connection client instead of the
              default Apache one: one HEAD per clip needs no connection pool, and it brings no further jars -->
@@ -65,6 +70,12 @@
         <dependency>
             <groupId>org.springframework.boot</groupId>
             <artifactId>spring-boot-starter-test</artifactId>
+            <scope>test</scope>
+        </dependency>
+        <!-- Reads the JSON fixtures of the contracts jar into messages (version from the Spring Boot parent) -->
+        <dependency>
+            <groupId>com.google.protobuf</groupId>
+            <artifactId>protobuf-java-util</artifactId>
             <scope>test</scope>
         </dependency>
     </dependencies>

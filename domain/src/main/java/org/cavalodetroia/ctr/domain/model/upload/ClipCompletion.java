@@ -1,5 +1,6 @@
 package org.cavalodetroia.ctr.domain.model.upload;
 
+import java.time.Instant;
 import java.util.Objects;
 
 /**
@@ -10,7 +11,8 @@ import java.util.Objects;
  * @param partIndex        the part of the clip, 0-based
  * @param part             what the confirmation did to the part; {@link PartTransition#NONE} when {@code noop}
  * @param sessionCompleted whether this confirmation completed the session
- * @param noop             whether the clip was already uploaded with the same confirmation, so nothing changed
+ * @param noop             whether the clip was already uploaded with the same confirmation, so the confirmation
+ *                         wrote nothing (its part may still get published, see {@link #markPublished})
  */
 public record ClipCompletion(UploadSession after,
                              Camera camera,
@@ -47,5 +49,22 @@ public record ClipCompletion(UploadSession after,
      */
     public PartState partState() {
         return after.partState(partIndex);
+    }
+
+    /**
+     * @return whether the clip's part has been published, by this confirmation or an earlier one
+     */
+    public boolean published() {
+        return after.part(partIndex).published();
+    }
+
+    /**
+     * @param publishedAt when the part's message was published
+     * @return this completion with the clip's part published
+     * @throws IllegalStateException when the part is not {@link PartStatus#COMPLETE}, or is published already
+     */
+    public ClipCompletion markPublished(final Instant publishedAt) {
+        return new ClipCompletion(after.markPublished(partIndex, publishedAt), camera, partIndex, part,
+                sessionCompleted, noop);
     }
 }

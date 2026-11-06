@@ -1,0 +1,14 @@
+# On this machine only, added to dev: `dev,local` (the IDE run configuration, `make run`, `make up`). The Kafka of
+# docker-compose.yml creates no topic by itself, so ctr-service creates the ones it publishes to, with their .retry
+# and .dlq siblings (LocalTopicsConfig). Jolokia serves JMX over HTTP for Hawtio (see the README); it can run any MBean
+# operation, so it is never exposed outside this profile.
+spring:
+  kafka:
+    admin:
+      auto-create: true
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,metrics,jolokia

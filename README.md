@@ -4,7 +4,8 @@ Control Tower: the only backend the UI (gui-service) talks to.
 
 Right now it has the first endpoints of the clip upload flow (ADR-0001, second series): a camera registers on an
 event's upload session and is told where in the bucket to upload its clips, then confirms each clip it uploaded, and
-the app reads the session back to show where the upload stands. See [API](#api).
+the app reads the session back to show where the upload stands. Each completed part is handed over to extraction on
+Kafka. See [API](#api) and [Publishing](#publishing).
 
 ## Architecture
 
@@ -13,10 +14,10 @@ Kafka or SQL.
 
 | Module | Contents |
 |---|---|
-| `domain` | `model/upload/UploadSession` (the registration and clip confirmation rules, and the state of each part) and its values (`Window` holds the overlap rule), `service/UploadSessionService`, and the ports: `port/in/RegisterCamera`, `GetUploadSession` and `CompleteClip` (called by api) and `port/out/EventRepository`, `UploadSessionRepository`, `IdempotencyStore` and `ClipStorage` (implemented by infra). Depends on the JDK only. |
+| `domain` | `model/upload/UploadSession` (the registration and clip confirmation rules, and the state of each part) and its values (`Window` holds the overlap rule), `service/UploadSessionService`, and the ports: `port/in/RegisterCamera`, `GetUploadSession` and `CompleteClip` (called by api) and `port/out/EventRepository`, `UploadSessionRepository`, `IdempotencyStore`, `ClipStorage` and `ClipEventPublisher` (implemented by infra). Depends on the JDK only. |
 | `api` | `controller/UploadSessionController`, the request and response records in `domain/`, `converter/`, `error/ApiExceptionHandler` (problem+json), `filter/CorrelationIdFilter` and `idempotency/IdempotentRequests` |
-| `infra` | `repository/` (jOOQ adapters), `converter/` (domain ↔ jOOQ records), `storage/` (`S3ClipStorage`, the S3 `HEAD` behind `ClipStorage`, and `S3ClientFactory`), the Liquibase changelog in `resources/db/changelog/`, and `kafka/serialization/` (the protobuf serializer for the publishers to come) |
-| `application` | `CtrApplication`, `config/StorageProperties`, `wiring/UploadWiring` (builds the domain service and the S3 client), `application.yml` and one file per profile (see [Profiles](#profiles)) |
+| `infra` | `repository/` (jOOQ adapters), `converter/` (domain ↔ jOOQ records, and `ClipMessageConverter`, a completed part ↔ its protobuf message), `storage/` (`S3ClipStorage`, the S3 `HEAD` behind `ClipStorage`, and `S3ClientFactory`), `kafka/publisher/` (`KafkaClipEventPublisher` behind `ClipEventPublisher`, and `MessageHeaders`), `kafka/config/` (`KafkaProducerProperties`, the topics, and `LocalTopicsConfig`), `kafka/serialization/` (the protobuf serializer), and the Liquibase changelog in `resources/db/changelog/` |
+| `application` | `CtrApplication`, `config/StorageProperties`, `wiring/UploadWiring` (builds the domain service and the S3 client, and binds the Kafka topics), `application.yml` and one file per profile (see [Profiles](#profiles)) |
 | `component-tests` | Cucumber against the whole app, with Postgres, Kafka and MinIO in Testcontainers |
 
 Inside each module the first package level says what kind of class lives there, the second the concept (see
@@ -179,12 +180,14 @@ S3 call it makes. Only when the object is there with that size and etag is anyth
 - the part in `upload_part` closes when every camera has its clip `partIndex` uploaded. For `SINGLE` its window is the
   clip's own; for `LEFT` and `RIGHT` it is the overlap of the two clips: `start_ms` the later of the two starts,
   `duration_ms` the earlier of the two ends minus that start. The part is `COMPLETE`, or `NO_OVERLAP` (with a `WARN`
-  log line) when that duration is 0 or less, and then nothing will be published for it;
+  log line) when that duration is 0 or less, and then nothing is published for it;
 - the session in `upload_session` becomes `COMPLETED` when every clip of every camera is uploaded.
 
 `part.status` is the part's state as in the read above: `WAITING_LEFT` or `WAITING_RIGHT` while that camera's clip is
-missing (`WAITING` for a single camera), then `COMPLETE` or `NO_OVERLAP`. `published` and `partsPublished` count the parts with `upload_part.published_at` set; nothing publishes
-yet, so they stay `false` and `0`.
+missing (`WAITING` for a single camera), then `COMPLETE` or `NO_OVERLAP`. `published` and `partsPublished` count the
+parts with `upload_part.published_at` set. A `COMPLETE` part is published to Kafka right after the transaction, before
+the answer (see [Publishing](#publishing)): `published` is `true` once it is, and stays `false` while the part waits,
+for `NO_OVERLAP`, and when publishing failed.
 
 Rules worth knowing:
 
@@ -194,8 +197,8 @@ Rules worth knowing:
 - **Etags** are compared as strings once the surrounding double quotes are stripped on both sides, so a multipart
   etag such as `abc-3` is just a string. The size is checked first: an object with both wrong is `SIZE_MISMATCH`.
 - **Repeats.** The same body again for an uploaded clip returns the same `200`, built from what is stored, without
-  asking S3 or writing anything. Another body for an uploaded clip is `409`. There is no `Idempotency-Key` here: the
-  body is the idempotency rule.
+  asking S3 or writing anything, except publishing its part when that is `COMPLETE` and not published yet. Another
+  body for an uploaded clip is `409`. There is no `Idempotency-Key` here: the body is the idempotency rule.
 - **A completed session is closed.** It is no longer the event's open session, so a camera registering on the same
   event afterwards opens a new session.
 - Confirmations of one session run one after the other (the session row is locked for the transaction), so
@@ -212,6 +215,53 @@ Rules worth knowing:
 
 `X-Correlation-Id` works as for the registration.
 
+## Publishing
+
+When a confirmation completes a part, ctr-service hands the part over to extraction (ADR-0001) once the transaction
+that closed it has committed:
+
+| Session | Topic | Message (GlobalProtobufModels, `clip.v1`) |
+|---|---|---|
+| `LEFT` and `RIGHT` | `clip-pair-uploaded.v1` | `ClipPairUploaded`: the overlap of the two clips as the window, and both clips |
+| `SINGLE` | `clip-ready.v1` | `ClipReady`: the clip's own window, and the clip |
+
+Both carry `session_id`, `event_id`, `part_index`, `part_count`, `start_ms`, `duration_ms`, the venue (`sport`:
+`futsal` for `FUTSAL_5V5`, `football` for the `FOOTBALL_*` formats; `format`, `length_m`, `width_m`) and, per clip,
+its `uri` (the camera's `prefix` + `{partIndex}.mp4`), its confirmed `size_bytes` and the `content_type` the camera
+registered. The key is `<session_id>:<part_index>`. The headers are UTF-8 strings:
+
+| Header | Value |
+|---|---|
+| `message_id` | A new UUIDv7 per message sent |
+| `message_type` | The full protobuf name: `cavalodetroia.clip.v1.ClipPairUploaded` or `cavalodetroia.clip.v1.ClipReady` |
+| `occurred_at` | When it was sent, ISO-8601 in UTC (`2026-11-05T10:00:00.123Z`) |
+| `producer` | `ctr-service` |
+| `correlation_id` | The request's (`X-Correlation-Id`) |
+
+- **After the commit, never inside it.** The part is written and committed first; then the message is sent and the
+  service waits for the broker's acknowledgement, at most 5 s in all (`acks=all`, idempotent producer,
+  `delivery.timeout.ms` 5000, `max.block.ms` and `request.timeout.ms` 3000). An acknowledged message stamps
+  `upload_part.published_at`, and the answer says `"published": true`.
+- **A failed publish never fails the confirmation.** With the broker down, too slow or refusing, the answer is still
+  `200`, with `"published": false`; `published_at` stays `null` and an `ERROR` log line names the session and the part
+  (`session_id`, `part_index`, the topic). Sending the same confirmation again publishes it then.
+- **Once.** A part with `published_at` set is not published again: a repeated confirmation answers the same and sends
+  nothing. Parts that wait, and `NO_OVERLAP` parts, publish nothing.
+- **The gap until TH-156.** Saving then publishing is a dual write. A crash between the commit and the send leaves the
+  part unpublished until its confirmation is repeated, and a message whose acknowledgement was lost (sent, appended,
+  but timed out) is sent again by that repeat. Consumers must tolerate a duplicate: the same key and payload, another
+  `message_id`. The transactional outbox (TH-156) closes the gap.
+
+**Topics** belong to `cdtv1-data-dependencies` (TH-135): ctr-service creates none (`spring.kafka.admin.auto-create:
+false`), except with the `local` profile, which creates both topics and their `.retry` and `.dlq` siblings, with one
+partition and one replica each (`LocalTopicsConfig`), because the compose Kafka creates no topic by itself.
+
+**Metric.** `ctr.kafka.message.bytes`, a distribution summary in bytes tagged `topic`, records each published message:
+its serialized key and value, as the producer reports them, plus its headers' keys and values. It is at
+`/actuator/metrics/ctr.kafka.message.bytes?tag=topic:clip-ready.v1` with `dev`, `test` and `local` (`prod` exposes only
+`health` and `info` over HTTP), and over JMX with every profile (`micrometer-registry-jmx`, domain `metrics`), next to
+the Kafka producer's own metrics. Locally, Hawtio shows both (see [Running it locally](#running-it-locally)).
+
 ## Logs
 
 One JSON object per line, with `service`, `level`, `message`, `logger_name` and the MDC: `correlation_id` for every
@@ -222,21 +272,29 @@ line of a request, plus `session_id`, `camera` and `part_index` once the request
 You need Java 25 and Docker (Docker Desktop, Colima or OrbStack). You also need the contracts jar: see
 [Contracts](#contracts).
 
-**To debug in IntelliJ**, start only Postgres, Kafka and MinIO:
+**To debug in IntelliJ**, start only Postgres, Kafka, MinIO and Hawtio:
 
 ```sh
 docker compose up -d        # or: make deps-up, which also waits until they are healthy
 ```
 
 A one-shot `minio-init` container creates the `cdt-videos` bucket and exits. Then run the shared **CtrApplication**
-run configuration (from `.run/`). It activates the `dev` profile (see [Profiles](#profiles)), which already points at
-`localhost:5432`, `localhost:9092` and MinIO on `localhost:9000` (console on http://localhost:9001, `minioadmin` /
-`minioadmin`).
+run configuration (from `.run/`). It activates the `dev` and `local` profiles (see [Profiles](#profiles)), which
+already point at `localhost:5432`, `localhost:9092` and MinIO on `localhost:9000` (console on http://localhost:9001,
+`minioadmin` / `minioadmin`), and create the Kafka topics the app publishes to.
+
+**Hawtio**, a web console for JMX, starts with the rest on http://localhost:8090/hawtio. It reads the app's JMX
+through its Jolokia endpoint, which only the `local` profile serves (`/actuator/jolokia`). Under *Connect*, add a
+connection to host `host.docker.internal`, port `8080`, path `/actuator/jolokia` when the app runs from the IDE or
+with `make run`, or to host `ctr-service` when it runs in Docker (`make up`). The `metrics` domain holds
+`ctr.kafka.message.bytes` (see [Publishing](#publishing)), `kafka.producer` the producer's metrics. Hawtio publishes
+no image of its own, so `hawtio/Dockerfile` puts its war (pinned and checked by SHA-256) on a pinned Tomcat. Its login
+is off: it is for this machine only.
 
 **To run it all in Docker**, use:
 
 ```sh
-make up      # builds the jar, then starts Postgres, Kafka, MinIO and the app on :8080
+make up      # builds the jar, then starts Postgres, Kafka, MinIO, Hawtio and the app on :8080
 make logs
 make down    # `make reset` also deletes the database
 ```
@@ -288,18 +346,21 @@ in `application-<profile>.yml`, next to it in `application/src/main/resources`.
 | Profile | Used by | Postgres and S3 |
 |---|---|---|
 | `dev` | the IDE run configuration, `make run`, `make up` (`docker-compose.yml` sets it), `CtrApplicationIT` | `DB_URL`, `DB_USERNAME`, `DB_PASSWORD`, `CTR_STORAGE_BUCKET`, `S3_ENDPOINT`, `S3_REGION`, `S3_ACCESS_KEY`, `S3_SECRET_KEY`, defaulting to the compose setup (the table above) |
+| `local` | added to `dev` on this machine: the IDE run configuration, `make run`, `make up` | as `dev`. On top, it creates the Kafka topics with their `.retry` and `.dlq` (see [Publishing](#publishing)) and serves Jolokia for Hawtio |
 | `test` | the component tests | supplied by Testcontainers; the file only names the bucket (`cdt-videos`) and the region |
 | `prod` | deployed environments | the same eight variables, **required**: the app stops at startup when one is missing, and `ProfilesTest` checks the file carries no default (`S3_ENDPOINT` is set to an empty value on AWS) |
 
 To run with a profile, pass it to the jar with the variables set, or put it in the container's environment:
 
 ```sh
-java -jar application/target/ctr-service-exec.jar --spring.profiles.active=prod   # `make run` passes dev
+java -jar application/target/ctr-service-exec.jar --spring.profiles.active=prod   # `make run` passes dev,local
 docker run -e SPRING_PROFILES_ACTIVE=prod -e DB_URL=... ctr-service:local
 ```
 
-`KAFKA_BOOTSTRAP_SERVERS` stays in `application.yml`, with its compose default, for every profile until the Kafka
-producer configuration arrives.
+`KAFKA_BOOTSTRAP_SERVERS` stays in `application.yml`, with its compose default, for every profile, next to the
+producer settings and the topic names, which are the same everywhere. Over HTTP the actuator exposes `health` and
+`info` with every profile, `metrics` with `dev` and `test` as well, and `jolokia` with `local` only (it can run any
+MBean operation); `ProfilesTest` checks each.
 
 ## Tests
 
@@ -314,7 +375,13 @@ then checks the answer, the rows in Postgres and the log lines: an object presen
 another etag; a repeat with the same body (after deleting the object, so a `HEAD` would fail) and with another; MinIO
 paused, which hangs every connection, answering `503` within 6 s; the `SINGLE` flow; `LEFT` then `RIGHT` with the
 overlap; clips that don't overlap; the last clip completing the session; 404 and 400; and `LEFT` and `RIGHT`
-confirming the same part at the same time on 10 sessions, closing it once.
+confirming the same part at the same time on 10 sessions, closing it once. Whenever a part closes, it also checks
+`published` and `published_at`. `publish_part.feature` reads `clip-pair-uploaded.v1` and `clip-ready.v1` in the Kafka
+container (`support/KafkaSupport` creates them, as the platform does, since that broker creates no topic by itself) and
+checks the message of a `LEFT` and `RIGHT` part and of a `SINGLE` one, its key and headers, a repeat that sends nothing
+more, Kafka paused (the answer within 6 s with `published: false`, the `ERROR` log line, then the same confirmation
+publishing once Kafka is back), `NO_OVERLAP` sending nothing, the bytes metric over the actuator and JMX, and a second
+instance on the `local` profile creating the six topics and serving Jolokia while the main one declares no topic.
 `register_camera.feature` registers cameras over HTTP and checks the response, the rows in Postgres and the log lines
 of the request (LEFT then RIGHT, SINGLE alone, each 409, the replayed `Idempotency-Key`, standard venue dimensions,
 a later camera's venue ignored whatever it holds, 404, 400, and the correlation id). `concurrent_registration.feature`
@@ -349,16 +416,17 @@ and records what it ran in the `databasechangelog` table.
 | `0002-create-upload-tables.sql` | `upload_session` (at most one `OPEN` session per event), `upload_camera`, `upload_clip`, `upload_part` |
 | `0003-create-idempotency-key.sql` | `idempotency_key`: the stored response of each request with an `Idempotency-Key` (rows older than 24 hours are ignored) |
 | `0004-add-upload-session-version.sql` | `upload_session.version`: 0 when opened, plus one per camera that joins; a join is only stored over the version it read |
+| `0005-add-upload-camera-content-type.sql` | `upload_camera.content_type`: the `contentType` a camera registered, which the Kafka messages carry per clip. Rows from before it read `video/mp4`, the only type cameras send today |
 
 To change the schema, add a changeset:
 
 1. Create the next file in `infra/src/main/resources/db/changelog/changes/`, numbered after the last one:
-   `0005-<what>.sql`.
+   `0006-<what>.sql`.
 2. Start it with the Liquibase header, then a `--changeset` line before each change:
    ```sql
    --liquibase formatted sql
 
-   --changeset ctr:0005-add-event-kickoff
+   --changeset ctr:0006-add-event-kickoff
    ALTER TABLE event ADD COLUMN kickoff_at TIMESTAMP WITH TIME ZONE;
    ```
 3. Run `make build`. jOOQ generates its classes from these files (no database needed), so the new tables and

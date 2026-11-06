@@ -5,10 +5,11 @@ Feature: Schema
 
   Scenario: The upload schema is applied on a clean database
     Then these changesets are applied, in order
-      | ctr:0001-create-event               |
-      | ctr:0002-create-upload-tables       |
-      | ctr:0003-create-idempotency-key     |
-      | ctr:0004-add-upload-session-version |
+      | ctr:0001-create-event                   |
+      | ctr:0002-create-upload-tables           |
+      | ctr:0003-create-idempotency-key         |
+      | ctr:0004-add-upload-session-version     |
+      | ctr:0005-add-upload-camera-content-type |
     And these tables exist
       | upload_session  |
       | upload_camera   |

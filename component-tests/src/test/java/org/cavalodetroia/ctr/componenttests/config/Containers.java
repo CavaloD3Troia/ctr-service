@@ -12,8 +12,11 @@ import org.testcontainers.utility.DockerImageName;
  */
 public final class Containers {
 
-    static final PostgreSQLContainer POSTGRES = new PostgreSQLContainer("postgres:18.6-alpine");
-    static final KafkaContainer KAFKA = new KafkaContainer("apache/kafka:4.3.2");
+    public static final PostgreSQLContainer POSTGRES = new PostgreSQLContainer("postgres:18.6-alpine");
+    // Like docker-compose.yml and the shared environments: a topic exists only once someone creates it
+    // (KafkaSupport, as cdtv1-data-dependencies does), so a publish to a topic nobody created fails
+    public static final KafkaContainer KAFKA = new KafkaContainer("apache/kafka:4.3.2")
+            .withEnv("KAFKA_AUTO_CREATE_TOPICS_ENABLE", "false");
     // Chainguard's build of MinIO (MinIO no longer publishes images): same server, same command line
     public static final MinIOContainer MINIO = new MinIOContainer(DockerImageName
             .parse("cgr.dev/chainguard/minio@sha256:cee9a8e35885e93f14b3cb32960e5017aff74e2adfb52ba87c65003b0163886b")

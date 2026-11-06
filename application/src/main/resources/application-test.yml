@@ -4,6 +4,13 @@ logging:
   level:
     org.apache.kafka: WARN
 
+# The component tests read the bytes-per-message summary at /actuator/metrics
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,metrics
+
 ctr:
   storage:
     # The bucket the tests create in the MinIO container, and a region MinIO accepts

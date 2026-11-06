@@ -7,6 +7,7 @@ import org.cavalodetroia.ctr.domain.model.upload.ClipCompletion;
 import org.cavalodetroia.ctr.domain.model.upload.UploadCamera;
 import org.cavalodetroia.ctr.domain.model.upload.UploadSession;
 
+import java.time.Instant;
 import java.util.Optional;
 import java.util.UUID;
 import java.util.function.Function;
@@ -45,6 +46,16 @@ public interface UploadSessionRepository {
      * @throws SessionNotFoundException when the session is unknown
      */
     ClipCompletion update(UUID sessionId, Function<UploadSession, ClipCompletion> completion);
+
+    /**
+     * Records that the part's message is out, in one short transaction of its own. Only a part not published yet is
+     * changed, so a part published twice keeps its first publication time.
+     *
+     * @param sessionId   the session
+     * @param partIndex   the part, 0-based
+     * @param publishedAt when the message was published
+     */
+    void markPublished(UUID sessionId, int partIndex, Instant publishedAt);
 
     /**
      * Stores a session the first camera just opened: the session, its camera, its clips and its parts.

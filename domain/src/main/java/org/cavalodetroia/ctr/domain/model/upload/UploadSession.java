@@ -176,6 +176,32 @@ public record UploadSession(UUID id,
     }
 
     /**
+     * @return the camera as it registered on the session
+     * @throws UnknownCameraException when the camera is not registered on the session
+     */
+    public UploadCamera camera(final Camera camera) {
+        return cameras.stream()
+                .filter(registered -> registered.camera() == camera)
+                .findFirst()
+                .orElseThrow(() -> new UnknownCameraException(id, camera));
+    }
+
+    /**
+     * The part's message is out: the part keeps its window and gets its publication time.
+     *
+     * @param partIndex   the part, 0-based
+     * @param publishedAt when the message was published
+     * @return the session with the part published
+     * @throws PartIndexOutOfRangeException when the part index is outside {@code 0 .. partCount - 1}
+     * @throws IllegalStateException        when the part is not {@link PartStatus#COMPLETE}, or is published already
+     */
+    public UploadSession markPublished(final int partIndex, final Instant publishedAt) {
+        final UploadPart part = part(partIndex);
+        return new UploadSession(id, eventId, status, venue, createdAt, updatedAt, version, cameras, clips,
+                replace(parts, part, part.markPublished(publishedAt)));
+    }
+
+    /**
      * @return the part with this index
      * @throws PartIndexOutOfRangeException when the part index is outside {@code 0 .. partCount - 1}
      */
@@ -313,7 +339,7 @@ public record UploadSession(UUID id,
                                                  final UUID sessionId,
                                                  final CameraRegistration registration,
                                                  final Instant now) {
-        return new UploadCamera(registration.camera(), registration.partCount(),
+        return new UploadCamera(registration.camera(), registration.partCount(), registration.contentType(),
                 ObjectKeys.prefix(bucket, eventId, sessionId, registration.camera()), now);
     }
 

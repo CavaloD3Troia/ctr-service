@@ -51,6 +51,7 @@ public class UploadSessionRecordConverter {
         record.setSessionId(sessionId);
         record.setCamera(camera.camera().name());
         record.setPartCount(camera.partCount());
+        record.setContentType(camera.contentType());
         record.setPrefix(camera.prefix());
         record.setCreatedAt(toOffsetDateTime(camera.createdAt()));
         return record;
@@ -109,8 +110,8 @@ public class UploadSessionRecordConverter {
     }
 
     private static UploadCamera toDomain(final UploadCameraRecord camera) {
-        return new UploadCamera(Camera.valueOf(camera.getCamera()), camera.getPartCount(), camera.getPrefix(),
-                camera.getCreatedAt().toInstant());
+        return new UploadCamera(Camera.valueOf(camera.getCamera()), camera.getPartCount(), camera.getContentType(),
+                camera.getPrefix(), camera.getCreatedAt().toInstant());
     }
 
     private static UploadClip toDomain(final UploadClipRecord clip) {

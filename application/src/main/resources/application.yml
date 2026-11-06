@@ -9,6 +9,24 @@ spring:
     bootstrap-servers: ${KAFKA_BOOTSTRAP_SERVERS:localhost:9092}
     producer:
       value-serializer: org.cavalodetroia.ctr.infra.kafka.serialization.ProtobufSerializer
+      # No message lost or duplicated by the producer's own retries. A send gives up within 5 s in all (TH-152 PD-4):
+      # 3 s to fetch metadata or for one request, 5 s for the whole delivery
+      acks: all
+      properties:
+        enable.idempotence: true
+        delivery.timeout.ms: 5000
+        request.timeout.ms: 3000
+        max.block.ms: 3000
+    admin:
+      # The topics come from cdtv1-data-dependencies (TH-135): ctr-service creates none, except in the local profile
+      auto-create: false
+
+ctr:
+  kafka:
+    # KafkaProducerProperties: the topics of ADR-0001, the same in every environment
+    topics:
+      clip-pair-uploaded: clip-pair-uploaded.v1
+      clip-ready: clip-ready.v1
 
 # One JSON object per line, with the MDC (correlation_id, session_id, camera…) as top-level fields
 logging:

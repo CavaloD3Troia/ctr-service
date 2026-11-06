@@ -1,5 +1,5 @@
-# `docker compose up -d`                → Postgres, Kafka and MinIO with the cdt-videos bucket (run/debug the app from
-#                                         the IDE)
+# `docker compose up -d`                → Postgres, Kafka, MinIO with the cdt-videos bucket, and Hawtio on
+#                                         http://localhost:8090/hawtio (run/debug the app from the IDE)
 # `docker compose --profile app up -d`  → the app too (see `make up`)
 name: ctr-service
 
@@ -47,6 +47,9 @@ services:
       KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
       KAFKA_GROUP_INITIAL_REBALANCE_DELAY_MS: 0
       KAFKA_NUM_PARTITIONS: 3
+      # Like the shared environments: a topic exists only once someone creates it. Here that is ctr-service itself,
+      # in the local profile (LocalTopicsConfig)
+      KAFKA_AUTO_CREATE_TOPICS_ENABLE: "false"
     healthcheck:
       test: ["CMD-SHELL", "/opt/kafka/bin/kafka-broker-api-versions.sh --bootstrap-server localhost:9092 > /dev/null 2>&1"]
       interval: 5s
@@ -92,7 +95,7 @@ services:
       minio-init:
         condition: service_completed_successfully
     environment:
-      SPRING_PROFILES_ACTIVE: dev
+      SPRING_PROFILES_ACTIVE: dev,local
       DB_URL: jdbc:postgresql://postgres:5432/ctr
       KAFKA_BOOTSTRAP_SERVERS: kafka:29092
       S3_ENDPOINT: http://minio:9000
@@ -105,6 +108,17 @@ services:
       timeout: 3s
       retries: 30
       start_period: 10s
+
+  # JMX of ctr-service in a browser, over its Jolokia endpoint (local profile): http://localhost:8090/hawtio, then
+  # Connect → http://ctr-service:8080/actuator/jolokia (app in compose) or http://host.docker.internal:8080/actuator/jolokia
+  # (app from the IDE). Built from hawtio/Dockerfile: Hawtio publishes no standalone image
+  hawtio:
+    build: ./hawtio
+    image: ctr-service-hawtio:local
+    ports:
+      - "8090:8080"
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
 
 volumes:
   postgres-data:

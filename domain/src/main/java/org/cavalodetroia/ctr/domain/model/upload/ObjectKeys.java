@@ -34,6 +34,15 @@ public final class ObjectKeys {
         return "s3://" + bucket + "/" + folder(eventId, sessionId, camera);
     }
 
+    /**
+     * @return the URI of one clip: the camera's {@link #prefix prefix} with {@link #CLIP_KEY_TEMPLATE} filled in, the
+     *         way the camera is told to upload it, for example
+     *         {@code s3://<bucket>/events/<eventId>/sessions/<sessionId>/LEFT/39.mp4}
+     */
+    public static String clipUri(final String prefix, final int partIndex) {
+        return prefix + partIndex + CLIP_EXTENSION;
+    }
+
     private static String folder(final UUID eventId, final UUID sessionId, final Camera camera) {
         return "events/" + eventId + "/sessions/" + sessionId + "/" + camera.name() + "/";
     }

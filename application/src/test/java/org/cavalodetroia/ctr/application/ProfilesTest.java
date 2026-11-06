@@ -137,12 +137,48 @@ class ProfilesTest {
     }
 
     @ParameterizedTest
-    @ValueSource(strings = {"dev", "test", "prod"})
-    void should_expose_only_health_and_info_over_http_in_every_profile(final String profile) {
-        // Health is reachable over HTTP in every environment; nothing else from actuator is
-        withProfile(profile).run(context -> assertThat(
+    @CsvSource({
+            "dev, 'health,info,metrics'",
+            "test, 'health,info,metrics'",
+            "prod, 'health,info'",
+            "'dev,local', 'health,info,metrics,jolokia'"})
+    void should_expose_over_http_only_what_the_profile_needs(final String profiles, final String exposed) {
+        // TH-152 AC-7: health everywhere; the metrics locally and in tests (prod reads them over JMX); Jolokia, which
+        // can run any MBean operation, on this machine only, for Hawtio
+        withProfile(profiles).run(context -> assertThat(
                 context.getEnvironment().getProperty("management.endpoints.web.exposure.include"))
-                .isEqualTo("health,info"));
+                .isEqualTo(exposed));
+    }
+
+    @ParameterizedTest
+    @CsvSource({"dev, false", "test, false", "prod, false", "'dev,local', true", "'test,local', true"})
+    void should_create_topics_only_when_profile_is_local(final String profiles, final boolean autoCreate) {
+        // TH-152 AC-8: the topics belong to cdtv1-data-dependencies (TH-135), except on this machine
+        withProfile(profiles).run(context -> assertThat(
+                context.getEnvironment().getProperty("spring.kafka.admin.auto-create", Boolean.class))
+                .isEqualTo(autoCreate));
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {"dev", "test", "prod"})
+    void should_publish_to_the_adr_topics_with_a_bounded_send_in_every_profile(final String profile) {
+        // TH-152 PD-4: the same topics everywhere, and a send that gives up within 5 s
+        withProfile(profile).run(context -> {
+            assertThat(context.getEnvironment().getProperty("ctr.kafka.topics.clip-pair-uploaded"))
+                    .isEqualTo("clip-pair-uploaded.v1");
+            assertThat(context.getEnvironment().getProperty("ctr.kafka.topics.clip-ready")).isEqualTo("clip-ready.v1");
+            assertThat(context.getEnvironment().getProperty("spring.kafka.producer.acks")).isEqualTo("all");
+            assertThat(context.getEnvironment().getProperty("spring.kafka.producer.properties.delivery.timeout.ms"))
+                    .isEqualTo("5000");
+        });
+    }
+
+    @Test
+    void should_load_the_local_file_on_top_of_dev_when_profile_is_local() {
+        withProfile("dev,local").run(context ->
+                assertThat(context.getEnvironment().getPropertySources().stream().map(PropertySource::getName))
+                        .anySatisfy(name -> assertThat(name).contains("application-local.yml"))
+                        .anySatisfy(name -> assertThat(name).contains("application-dev.yml")));
     }
 
     @EnableConfigurationProperties(StorageProperties.class)

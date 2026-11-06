@@ -30,10 +30,13 @@
     <properties>
         <java.version>25</java.version>
 
-        <!-- Shared Kafka contracts. Bump to the released version once GlobalProtobufModels is tagged. -->
-        <global-protobuf-models.version>0.1.0-SNAPSHOT</global-protobuf-models.version>
+        <!-- Shared Kafka contracts: 0.2.0 brings ClipPairUploaded and ClipReady (TH-133). Bump to the released version
+             once GlobalProtobufModels is tagged. -->
+        <global-protobuf-models.version>0.2.0-SNAPSHOT</global-protobuf-models.version>
 
         <archunit.version>1.5.1</archunit.version>
+        <!-- JMX over HTTP for Hawtio, local profile only. Not managed by the Spring Boot parent -->
+        <jolokia.version>2.6.5</jolokia.version>
         <cucumber.version>8.0.4</cucumber.version>
         <!-- The 3.x line is the one built for Spring Boot 4 -->
         <springdoc.version>3.2.0</springdoc.version>

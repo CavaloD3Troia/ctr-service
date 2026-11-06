@@ -18,6 +18,7 @@ import org.cavalodetroia.ctr.domain.model.upload.SessionStatus;
 import org.cavalodetroia.ctr.domain.model.venue.RequestedVenue;
 import org.junit.jupiter.api.Test;
 
+import java.time.Instant;
 import java.util.List;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -45,7 +46,7 @@ class UploadSessionConverterTest {
                 new VenueRequest("FOOTBALL_11V11", 105.0, 68.0));
 
         assertThat(converter.toRegistration(request)).isEqualTo(
-                new CameraRegistration(Camera.LEFT, 40, new RequestedVenue("FOOTBALL_11V11", 105.0, 68.0)));
+                new CameraRegistration(Camera.LEFT, 40, "video/mp4", new RequestedVenue("FOOTBALL_11V11", 105.0, 68.0)));
     }
 
     // The format is the domain's to check, and only on the first camera of a session
@@ -114,5 +115,23 @@ class UploadSessionConverterTest {
 
         assertThat(response.camera()).isEqualTo(Camera.RIGHT);
         assertThat(response.part()).isEqualTo(new PartSummary(PartState.COMPLETE, false));
+    }
+
+    // TH-152 AC-1: the answer says the part went out, and the session counts it
+    @Test
+    void should_sayPublished_when_theCompletionPublishedThePart() {
+        final CompleteClipResponse response = converter.toResponse(
+                rightConfirmedPart3AfterLeft().markPublished(Instant.parse("2026-11-04T18:10:00Z")));
+
+        assertThat(response.part()).isEqualTo(new PartSummary(PartState.COMPLETE, true));
+        assertThat(response.session().partsPublished()).isEqualTo(1);
+    }
+
+    // TH-152: the content type the camera registered with is kept for its clips' messages
+    @Test
+    void should_carryTheContentType_when_convertingTheRequest() {
+        final RegisterCameraRequest request = new RegisterCameraRequest(Camera.SINGLE, 12, "video/quicktime", null);
+
+        assertThat(converter.toRegistration(request).contentType()).isEqualTo("video/quicktime");
     }
 }

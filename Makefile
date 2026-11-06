@@ -38,8 +38,8 @@ package: ## Build the runnable jar, skipping the tests
 
 # `--wait` treats a container that exits as a failure, so the one-shot minio-init (it creates the bucket) runs on its own
 .PHONY: deps-up
-deps-up: ## Start only Postgres, Kafka and MinIO (with the bucket), then run or debug CtrApplication from the IDE
-	$(COMPOSE) up -d --wait postgres kafka minio
+deps-up: ## Start only Postgres, Kafka, MinIO (with the bucket) and Hawtio, then run or debug CtrApplication from the IDE
+	$(COMPOSE) up -d --build --wait postgres kafka minio hawtio
 	$(COMPOSE) run --rm minio-init
 
 .PHONY: up
@@ -48,7 +48,7 @@ up: package deps-up ## Build the app and start it in Docker together with Postgr
 
 .PHONY: run
 run: package ## Run the app on this machine, against `make deps-up`
-	java -jar $(APP_JAR) --spring.profiles.active=dev
+	java -jar $(APP_JAR) --spring.profiles.active=dev,local
 
 .PHONY: logs
 logs: ## Follow the app logs

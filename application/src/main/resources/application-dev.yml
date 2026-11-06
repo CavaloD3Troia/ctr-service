@@ -7,6 +7,13 @@ spring:
     username: ${DB_USERNAME:ctr}
     password: ${DB_PASSWORD:ctr}
 
+# The bytes-per-message summary (ctr.kafka.message.bytes) at /actuator/metrics, besides JMX
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,metrics
+
 ctr:
   # Where cameras upload their clips, and how ctr-service reaches it to check them (StorageProperties): the MinIO of
   # docker-compose.yml, with the bucket minio-init creates

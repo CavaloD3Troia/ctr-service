@@ -22,6 +22,7 @@ import tools.jackson.databind.json.JsonMapper;
 
 import java.nio.charset.StandardCharsets;
 import java.time.Duration;
+import java.time.Instant;
 import java.time.OffsetDateTime;
 import java.util.ArrayList;
 import java.util.Arrays;
@@ -51,7 +52,9 @@ public class CompleteClipSteps {
     private static final String COMPLETE_PATH =
             "/api/v1/upload-sessions/{sessionId}/cameras/{camera}/parts/{partIndex}/complete";
     private static final String REGISTRATION = """
-            {"camera": "%s", "partCount": %d, "contentType": "video/mp4", "venue": {"format": "FOOTBALL_11V11"}}""";
+            {"camera": "%s", "partCount": %d, "contentType": "video/mp4", "venue": %s}""";
+    private static final String STANDARD_PITCH = """
+            {"format": "FOOTBALL_11V11"}""";
     private static final String OUR_LOGGERS = "org.cavalodetroia.ctr.";
     private static final int CLIP_BYTES = 1024;
     // For a clip never put in the bucket: any well-formed size and etag
@@ -63,12 +66,14 @@ public class CompleteClipSteps {
 
     private UUID sessionId;
     private int partCount;
+    private String venue = STANDARD_PITCH;
     private List<String> cameras = List.of();
     // What each PUT got back, by session, camera and part index: the size and the ETag, quoted as S3 sends it
     private final Map<String, UploadedClip> uploaded = new HashMap<>();
     private boolean storagePaused;
     private ResponseEntity<String> response;
     private Duration answeredIn;
+    private Instant confirmationSentAt;
     private String firstConfirmation;
     private List<Map<String, Object>> rowsBefore;
     private List<ILoggingEvent> requestLogs;
@@ -107,6 +112,14 @@ public class CompleteClipSteps {
         this.cameras = names(cameras);
         this.partCount = partCount;
         sessionId = openSession(this.cameras, partCount);
+    }
+
+    @Given("a session with the cameras {string}, {int} part(s) and a {word} venue of {int} by {int} m")
+    public void aSessionWithTheCamerasAndTheVenue(final String cameras, final int partCount, final String format,
+                                                  final int lengthM, final int widthM) {
+        venue = """
+                {"format": "%s", "lengthM": %d, "widthM": %d}""".formatted(format, lengthM, widthM);
+        aSessionWithTheCameras(cameras, partCount);
     }
 
     @Given("the session is unknown")
@@ -208,7 +221,8 @@ public class CompleteClipSteps {
     @Then("the answer says the part is {word} and the session is {word}")
     public void theAnswerSaysThePartAndTheSession(final String partStatus, final String sessionStatus) {
         assertThat(read("$.part.status", String.class)).isEqualTo(partStatus);
-        assertThat(read("$.part.published", Boolean.class)).isFalse();
+        // TH-152: a COMPLETE part is published before the answer; a NO_OVERLAP one never is
+        assertThat(read("$.part.published", Boolean.class)).isEqualTo("COMPLETE".equals(partStatus));
         assertThat(read("$.session.status", String.class)).isEqualTo(sessionStatus);
     }
 
@@ -269,7 +283,12 @@ public class CompleteClipSteps {
         assertThat(part.getStatus()).isEqualTo(status);
         assertThat(part.getStartMs()).isEqualTo(startMs);
         assertThat(part.getDurationMs()).isEqualTo(durationMs);
-        assertThat(part.getPublishedAt()).isNull();
+        // TH-152: published, and so stamped, only when COMPLETE
+        if ("COMPLETE".equals(status)) {
+            assertThat(part.getPublishedAt()).isBetween(OffsetDateTime.now().minusMinutes(1), OffsetDateTime.now());
+        } else {
+            assertThat(part.getPublishedAt()).isNull();
+        }
     }
 
     @Then("the session is COMPLETED in the database")
@@ -370,6 +389,36 @@ public class CompleteClipSteps {
         }
     }
 
+    // For the steps of the publishing scenarios (PublishPartSteps), which go on from this class's
+
+    UUID sessionId() {
+        return sessionId;
+    }
+
+    ResponseEntity<String> response() {
+        return response;
+    }
+
+    Duration answeredIn() {
+        return answeredIn;
+    }
+
+    Instant confirmationSentAt() {
+        return confirmationSentAt;
+    }
+
+    List<ILoggingEvent> requestLogs() {
+        return requestLogs;
+    }
+
+    UploadedClip uploaded(final String camera, final int partIndex) {
+        return uploaded.get(key(sessionId, camera, partIndex));
+    }
+
+    String objectKey(final String camera, final int partIndex) {
+        return objectKey(sessionId, camera, partIndex);
+    }
+
     /**
      * A new event per session, so the scenarios don't depend on each other or on their order.
      */
@@ -381,7 +430,7 @@ public class CompleteClipSteps {
             final ResponseEntity<String> registered = http.post()
                     .uri(REGISTER_PATH, eventId)
                     .contentType(MediaType.APPLICATION_JSON)
-                    .body(REGISTRATION.formatted(camera, parts))
+                    .body(REGISTRATION.formatted(camera, parts, venue))
                     .retrieve()
                     .toEntity(String.class);
             assertThat(registered.getStatusCode().value()).as(registered.getBody()).isEqualTo(201);
@@ -400,6 +449,7 @@ public class CompleteClipSteps {
     private void confirm(final String camera, final int partIndex, final String body) {
         rowsBefore = rows(sessionId);
         final int logsBefore = logs.events().size();
+        confirmationSentAt = Instant.now();
         final long started = System.nanoTime();
         response = post(sessionId, camera, partIndex, body);
         answeredIn = Duration.ofNanos(System.nanoTime() - started);
@@ -467,6 +517,6 @@ public class CompleteClipSteps {
         return Arrays.stream(commaSeparated.split(",\\s*")).toList();
     }
 
-    private record UploadedClip(long sizeBytes, String etag) {
+    record UploadedClip(long sizeBytes, String etag) {
     }
 }

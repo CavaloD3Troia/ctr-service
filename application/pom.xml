@@ -31,6 +31,17 @@
             <groupId>org.springframework.boot</groupId>
             <artifactId>spring-boot-starter-actuator</artifactId>
         </dependency>
+        <!-- TH-152 PD-6: every Micrometer meter (ctr.kafka.message.bytes, the Kafka producer's) as a JMX MBean -->
+        <dependency>
+            <groupId>io.micrometer</groupId>
+            <artifactId>micrometer-registry-jmx</artifactId>
+        </dependency>
+        <!-- TH-152 PD-6: JMX over HTTP (/actuator/jolokia) for Hawtio; exposed in the local profile only -->
+        <dependency>
+            <groupId>org.jolokia</groupId>
+            <artifactId>jolokia-support-springboot</artifactId>
+            <version>${jolokia.version}</version>
+        </dependency>
 
         <dependency>
             <groupId>org.springframework.boot</groupId>

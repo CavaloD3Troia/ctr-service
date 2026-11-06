@@ -48,6 +48,29 @@ public record UploadPart(int partIndex, PartStatus status, Window window, Instan
     }
 
     /**
+     * @return whether a message is still owed for it: {@link PartStatus#COMPLETE} and not published yet. A
+     *         {@link PartStatus#NO_OVERLAP} part is never published
+     */
+    public boolean awaitsPublishing() {
+        return status == PartStatus.COMPLETE && publishedAt == null;
+    }
+
+    /**
+     * @param publishedAt when its message was published
+     * @return this part, published
+     * @throws IllegalStateException when the part {@link #awaitsPublishing() awaits no publishing}
+     */
+    public UploadPart markPublished(final Instant publishedAt) {
+        Objects.requireNonNull(publishedAt, "publishedAt");
+        if (!awaitsPublishing()) {
+            throw new IllegalStateException("Part " + partIndex + " is " + status
+                    + (published() ? " and published at " + this.publishedAt : "")
+                    + ": only a COMPLETE part is published, once");
+        }
+        return new UploadPart(partIndex, status, window, publishedAt);
+    }
+
+    /**
      * @return whether {@link #window} is a window to cut: only for a {@link PartStatus#COMPLETE} part, since a
      *         {@link PartStatus#NO_OVERLAP} one's is empty
      */
