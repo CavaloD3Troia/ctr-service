@@ -69,13 +69,20 @@ public class ClipMessageConverter {
     }
 
     /**
-     * @return the sport extraction needs for the format: {@code futsal} for {@code FUTSAL_5V5}, {@code football} for
-     *         the {@code FOOTBALL_*} formats
+     * @return the sport extraction needs for the format: {@code futsal} for the {@code FUTSAL_*} formats,
+     *         {@code football} for the {@code FOOTBALL_*} ones
+     * @throws IllegalStateException for a format of neither family, rather than guessing its sport
      */
     static String sport(final VenueFormat format) {
         // Not a switch: one over an enum compiles to a synthetic ClipMessageConverter$1, which CONVERTERS_ARE_NAMED_
         // CONVERTER rejects. ClipMessageConverterTest covers every format
-        return format == VenueFormat.FUTSAL_5V5 ? "futsal" : "football";
+        if (format.name().startsWith("FUTSAL_")) {
+            return "futsal";
+        }
+        if (format.name().startsWith("FOOTBALL_")) {
+            return "football";
+        }
+        throw new IllegalStateException("No sport known for the venue format " + format);
     }
 
     private static Clip toClip(final UploadSession session, final Camera camera, final int partIndex) {

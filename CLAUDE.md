@@ -124,8 +124,9 @@ The contracts jar must be in `~/.m2`: a GitHub Packages `read:packages` token, o
 
 **Contracts.** Protobuf from `CavaloD3Troia/GlobalProtobufModels` only; never a local `.proto` or hand-written
 serialization. To change a message: a PR there (new field numbers only, `buf breaking` must pass), tag a version,
-bump `global-protobuf-models.version` here. Topics are `<producer>.<entity>.<fact>.v<N>`, and the key is the id
-of the entity whose ordering matters (`event_id`).
+bump `global-protobuf-models.version` here. Topics are named after the payload, never after a service, with a version
+suffix (`clip-ready.v1`; ADR-0001 D28). The key is `<session_id>:<part_index>` on every clip topic (D5), so all
+messages about one part stay in order.
 
 **Publishing**
 - The domain calls a port; the adapter only converts and sends.

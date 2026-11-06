@@ -13,6 +13,7 @@ import org.cavalodetroia.ctr.domain.model.venue.VenueFormat;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.CsvSource;
+import org.junit.jupiter.params.provider.EnumSource;
 
 import java.io.IOException;
 import java.io.InputStream;
@@ -85,6 +86,13 @@ class ClipMessageConverterTest {
     @CsvSource({"FUTSAL_5V5, futsal", "FOOTBALL_7V7, football", "FOOTBALL_11V11, football"})
     void should_deriveTheSportFromTheFormat(final VenueFormat format, final String sport) {
         assertThat(ClipMessageConverter.sport(format)).isEqualTo(sport);
+    }
+
+    // A format added to VenueFormat breaks the build here until the converter knows its sport
+    @ParameterizedTest(name = "{0}")
+    @EnumSource(VenueFormat.class)
+    void should_knowTheSportOfEveryFormat(final VenueFormat format) {
+        assertThat(ClipMessageConverter.sport(format)).isIn("futsal", "football");
     }
 
     // The content type is the one the camera registered, not a constant

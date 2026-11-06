@@ -30,8 +30,8 @@ import java.util.concurrent.TimeoutException;
  * {@link MessageHeaders standard headers}. Records the bytes of every message it publishes in the distribution
  * summary {@value #BYTES_METRIC}, tagged with the topic.
  * <p>
- * Unlike the rest of the service's sends this one waits for the broker's acknowledgement, at most
- * {@link #SEND_TIMEOUT} in all: the confirmation answers whether its part was published (TH-152 PD-1), and must
+ * It waits for the broker's acknowledgement, the one exception to the CLAUDE.md rule against {@code .get()} on the
+ * send future, at most {@link #SEND_TIMEOUT} in all: the confirmation answers whether its part was published (TH-152 PD-1), and must
  * not hang when the broker does. Any failure, the producer's own timeouts included, becomes
  * {@link PublishFailedException}, so no client exception reaches the domain.
  */

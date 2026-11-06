@@ -272,7 +272,7 @@ line of a request, plus `session_id`, `camera` and `part_index` once the request
 You need Java 25 and Docker (Docker Desktop, Colima or OrbStack). You also need the contracts jar: see
 [Contracts](#contracts).
 
-**To debug in IntelliJ**, start only Postgres, Kafka and MinIO:
+**To debug in IntelliJ**, start only Postgres, Kafka, MinIO and Hawtio:
 
 ```sh
 docker compose up -d        # or: make deps-up, which also waits until they are healthy
@@ -353,7 +353,7 @@ in `application-<profile>.yml`, next to it in `application/src/main/resources`.
 To run with a profile, pass it to the jar with the variables set, or put it in the container's environment:
 
 ```sh
-java -jar application/target/ctr-service-exec.jar --spring.profiles.active=prod   # `make run` passes dev
+java -jar application/target/ctr-service-exec.jar --spring.profiles.active=prod   # `make run` passes dev,local
 docker run -e SPRING_PROFILES_ACTIVE=prod -e DB_URL=... ctr-service:local
 ```
 
